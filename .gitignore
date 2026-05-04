@@ -1,3 +1,7 @@
+# Environment variables / Secrets
+.env
+.env.*
+
 # Python-generated files
 __pycache__/
 *.py[oc]

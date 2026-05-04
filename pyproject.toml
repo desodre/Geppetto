@@ -3,14 +3,14 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "geppetto"
+name = "geppetto-android"
 version = "2.0.1"
 description = "Android UI Automation Framework — like Geppetto brought Pinocchio to life, this tool brings your tests to life."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
 authors = [
-    { name = "Jhonatha Sodre", email = "jhonathacirilo9000@gmail.com" },
+    { name = "Jhonatha Sodre", email = "jhon.desodre@gmail.com" },
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
@@ -45,9 +45,9 @@ hardware = [
 all = ["geppetto[analyzers,hardware]"]
 
 [project.urls]
-Homepage = "https://github.com/jhonathasodre/geppetto"
-Repository = "https://github.com/jhonathasodre/geppetto"
-Issues = "https://github.com/jhonathasodre/geppetto/issues"
+Homepage = "https://github.com/desodre/geppetto"
+Repository = "https://github.com/desodre/geppetto"
+Issues = "https://github.com/desodre/geppetto/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/geppetto"]
