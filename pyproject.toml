@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "geppetto-android"
-version = "2.0.2"
+version = "2.0.3"
 description = "Android UI Automation Framework — like Geppetto brought Pinocchio to life, this tool brings your tests to life."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -42,7 +42,7 @@ hardware = [
     "brainstem>=2.9.0",
 ]
 
-all = ["geppetto[analyzers,hardware]"]
+all = ["geppetto-android[analyzers,hardware]"]
 
 [project.urls]
 Homepage = "https://github.com/desodre/geppetto"
