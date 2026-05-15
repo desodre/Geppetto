@@ -228,8 +228,8 @@ wheels = [
 ]
 
 [[package]]
-name = "geppetto"
-version = "2.0.1"
+name = "geppetto-android"
+version = "2.0.3"
 source = { editable = "." }
 dependencies = [
     { name = "adbutils" },
@@ -268,7 +268,7 @@ requires-dist = [
     { name = "adbutils", specifier = ">=2.9.3" },
     { name = "brainstem", marker = "extra == 'hardware'", specifier = ">=2.9.0" },
     { name = "extcolors", marker = "extra == 'analyzers'", specifier = ">=1.0.0" },
-    { name = "geppetto", extras = ["analyzers", "hardware"], marker = "extra == 'all'" },
+    { name = "geppetto-android", extras = ["analyzers", "hardware"], marker = "extra == 'all'" },
     { name = "imagehash", marker = "extra == 'analyzers'", specifier = ">=4.3.1" },
     { name = "lxml", specifier = ">=6.0.0" },
     { name = "numpy", marker = "extra == 'analyzers'", specifier = ">=1.26.0" },
