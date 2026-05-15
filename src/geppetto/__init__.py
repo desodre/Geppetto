@@ -4,7 +4,7 @@ Just as Geppetto brought Pinocchio to life, this tool brings your
 Android tests to life through automation.
 """
 
-__version__ = "2.0.3"
+__version__ = "2.0.4"
 
 from typing import Any
 
