@@ -4,7 +4,7 @@ Just as Geppetto brought Pinocchio to life, this tool brings your
 Android tests to life through automation.
 """
 
-__version__ = "2.0.1"
+__version__ = "2.0.3"
 
 from typing import Any
 
@@ -12,6 +12,7 @@ from ._logging import DeviceLogger
 from .device import Device
 from .exceptions import DeviceIsSecureError, DeviceTimeoutError, WidgetNotFoundError
 from .models.by import By
+from .models.common_classes import CommonClasses
 from .models.direction import Direction
 from .models.wifi_security import WifiSecurityType
 from .ui.bounds import Bounds
@@ -54,6 +55,7 @@ __all__ = [
     "By",
     "Direction",
     "WifiSecurityType",
+    "CommonClasses",
     # Exceptions
     "DeviceIsSecureError",
     "DeviceTimeoutError",
