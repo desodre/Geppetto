@@ -1,77 +1,94 @@
-# Geppetto
+# geppetto-android
 
-> Just as Geppetto brought Pinocchio to life, this tool brings your tests to life through automation.
+Geppetto is a high-level Python framework for Android UI automation.
+It provides a single, typed API to orchestrate ADB, Fastboot, and UIAutomator2.
 
-## Overview
+Just as Geppetto brought Pinocchio to life, this tool brings your Android tests to life.
 
-Geppetto is an Android UI automation framework that orchestrates and executes your test suite
-with precision and care. It provides a high-level Python API for controlling Android devices
-via ADB, Fastboot, and UIAutomator2.
+## Highlights
+
+- High-level `Device` facade for Android automation workflows.
+- Widget search through text, id, class, content description, and XPath.
+- Structured UI hierarchy parsing via `lxml` (`WindowDump`, `Widget`, `Bounds`).
+- Built-in services for Wi-Fi, lockscreen, and notification controls.
+- Optional extras for image/video analyzers and hardware integrations.
+
+## Requirements
+
+- Python 3.12+
+- Android SDK platform tools (`adb`, optional `fastboot`) available on PATH
+- Android device or emulator with ADB enabled
 
 ## Installation
 
-```bash
-uv add geppetto
-
-# With image/video analysis support
-uv add geppetto --optional analyzers
-
-# With Acroname USB hub support
-uv add geppetto --optional hardware
-
-# Everything
-uv add geppetto --optional all
-```
-
-For development:
+### pip
 
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd geppetto
-
-# Install dependencies and create virtual environment
-uv sync --all-extras
+pip install geppetto-android
 ```
 
-## Quick Start
+Optional extras:
+
+```bash
+# Image/video analyzers
+pip install "geppetto-android[analyzers]"
+
+# Hardware integrations
+pip install "geppetto-android[hardware]"
+
+# All optional features
+pip install "geppetto-android[all]"
+```
+
+### uv
+
+```bash
+uv add geppetto-android
+uv add "geppetto-android[analyzers]"
+uv add "geppetto-android[hardware]"
+uv add "geppetto-android[all]"
+```
+
+## Quick start
 
 ```python
-from geppetto import Device, By
+from geppetto import By, Device, WifiSecurityType
 
 device = Device("SERIAL_NUMBER")
 
-# Install and open an app
 device.install("app.apk", replace=True)
 device.open_app("com.example.app")
 
-# Find and interact with UI elements
-widget = device.await_widget(By.TEXT, "Login", timeout=15)
-device.click(widget)
+login_button = device.await_widget(By.TEXT, "Login", timeout=15)
+device.click(login_button)
 
-# Take a screenshot
 device.screenshot("login_screen", pull_to_results=True)
 
-# Access sub-services
 device.wifi.connect("MyNetwork", WifiSecurityType.WPA2, "password")
-device.lockscreen.set_pin("1234")
-device.notification.open()
 ```
 
-## Architecture
+## Main components
 
+- `Device`: primary facade and entry point.
+- `geppetto.core`: ADB/Fastboot clients.
+- `geppetto.ui`: UI models (`WindowDump`, `Widget`, `Bounds`, `Children`).
+- `geppetto.services`: automation services (`wifi`, `lockscreen`, `notification`).
+- `geppetto.models`: enums such as `By`, `Direction`, `WifiSecurityType`, `CommonClasses`.
+
+## Development
+
+```bash
+git clone https://github.com/desodre/geppetto.git
+cd geppetto
+uv sync --all-extras
 ```
-geppetto/
-├── core/        # ADB & Fastboot transport layers
-├── ui/          # Widget, Bounds, WindowDump, Children
-├── services/    # Lockscreen, WiFi, Notification controllers
-├── analyzers/   # Screen and Video analysis tools
-├── hardware/    # External hardware (Acroname USB hub)
-├── models/      # Enums (By, Direction, WifiSecurityType)
-├── device.py    # Main Device class (composition-based)
-└── exceptions.py
-```
+
+## Links
+
+- Homepage: https://github.com/desodre/geppetto
+- Repository: https://github.com/desodre/geppetto
+- Issues: https://github.com/desodre/geppetto/issues
 
 ## License
 
-MIT
+MIT License

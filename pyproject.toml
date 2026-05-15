@@ -4,17 +4,20 @@ build-backend = "hatchling.build"
 
 [project]
 name = "geppetto-android"
-version = "2.0.3"
+version = "2.0.4"
 description = "Android UI Automation Framework — like Geppetto brought Pinocchio to life, this tool brings your tests to life."
-readme = "README.md"
+readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
 license = "MIT"
 authors = [
     { name = "Jhonatha Sodre", email = "jhon.desodre@gmail.com" },
 ]
+keywords = ["android", "automation", "adb", "uiautomator2", "testing", "qa"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3 :: Only",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Development Status :: 4 - Beta",
@@ -42,12 +45,19 @@ hardware = [
     "brainstem>=2.9.0",
 ]
 
-all = ["geppetto-android[analyzers,hardware]"]
+all = [
+    "opencv-python>=4.9.0",
+    "imagehash>=4.3.1",
+    "extcolors>=1.0.0",
+    "numpy>=1.26.0",
+    "brainstem>=2.9.0",
+]
 
 [project.urls]
 Homepage = "https://github.com/desodre/geppetto"
 Repository = "https://github.com/desodre/geppetto"
 Issues = "https://github.com/desodre/geppetto/issues"
+Documentation = "https://github.com/desodre/geppetto#readme"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/geppetto"]
@@ -84,4 +94,3 @@ module = [
     "brainstem.*",
 ]
 ignore_missing_imports = true
-
