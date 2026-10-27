@@ -10,7 +10,7 @@ class By(Enum):
         CLASS: Match by Android class name.
         ID: Match by resource-id.
         CONTENT_DESC: Match by content-description (accessibility).
-        WIDGET: Special marker for raw widget matching.
+        WIDGET: Reserved marker; not a search strategy (``find_widget`` rejects it).
     """
 
     TEXT = "text"

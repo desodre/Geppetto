@@ -15,6 +15,8 @@ class Children(list["Widget"]):
         super().__init__(children if children is not None else [])
 
     def get_widget(self, by: By, value: str) -> Widget | None:
+        if by in (By.XPATH, By.WIDGET):
+            raise ValueError(f"Children.get_widget does not support By.{by.name}")
         for widget in self:
             if getattr(widget, by.value) == value:
                 return widget
