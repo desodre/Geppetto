@@ -22,6 +22,10 @@ Artifacts of a device test go to ``<device result folder>/Tests/<test id>/``: ``
 and ``screenrecord.mp4`` with ``--geppetto-record``. One failing artifact never hides the others:
 its error goes to ``<name>.error.txt``.
 
+Reports: the folder is printed in the failure section, recorded as a JUnit ``<property>``
+(``geppetto_artifacts[<serial>]``) and, with pytest-html, the screenshot is embedded in the report
+and the other files are linked.
+
 Fixtures:
 
 ``device``                 the first selected :class:`~geppetto.Device` (session scope)
@@ -32,6 +36,7 @@ Fixtures:
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import re
@@ -261,10 +266,35 @@ def pytest_runtest_makereport(
         _collect(item)
         for capture in item.stash[_CAPTURES]:
             if capture.folder is not None:
-                report.sections.append(
-                    (f"geppetto artifacts ({capture.device.serial})", str(capture.folder))
-                )
+                _attach(item, report, capture)
     return report
+
+
+def _attach(item: pytest.Item, report: pytest.TestReport, capture: _Capture) -> None:
+    """Point the reports at the artifacts: terminal section, JUnit property, pytest-html."""
+    assert capture.folder is not None
+    serial = capture.device.serial
+    report.sections.append((f"geppetto artifacts ({serial})", str(capture.folder)))
+    # JUnit writes the properties of the teardown report, which copies item.user_properties.
+    propriedade = (f"geppetto_artifacts[{serial}]", str(capture.folder))
+    if propriedade not in item.user_properties:
+        item.user_properties.append(propriedade)
+
+    html = item.config.pluginmanager.getplugin("html")
+    if html is None:
+        return
+    extras = list(getattr(report, "extras", []))
+    screenshot = capture.artifacts.get("screenshot.png")
+    if screenshot is not None:
+        extras.append(
+            html.extras.png(
+                base64.b64encode(screenshot.read_bytes()).decode(), name=f"{serial} screenshot"
+            )
+        )
+    for name, path in capture.artifacts.items():
+        if name != "screenshot.png":
+            extras.append(html.extras.url(path.resolve().as_uri(), name=f"{serial} {name}"))
+    report.extras = extras  # type: ignore[attr-defined]  # attribute pytest-html reads
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:

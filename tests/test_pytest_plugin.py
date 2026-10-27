@@ -259,3 +259,26 @@ FakeU2.dump_hierarchy = _quebra
     pasta = _pasta(result, "test_falha")
     assert (pasta / "screenshot.png").exists() and (pasta / "logcat.txt").exists()
     assert "u2 agent gone" in (pasta / "window_dump.xml.error.txt").read_text()
+
+
+def test_junit_gets_the_artifacts_folder(pytester, sem_aparelhos):
+    import xml.etree.ElementTree as ET
+
+    pytester.makeconftest(CONFTEST)
+    pytester.makepyfile("def test_falha(device): assert False")
+    pytester.runpytest("--serial", "S1", "--junitxml=junit.xml")
+    props = {
+        p.get("name"): p.get("value")
+        for p in ET.parse(pytester.path / "junit.xml").iter("property")
+    }
+    assert props["geppetto_artifacts[S1]"].endswith("test_falha")
+
+
+def test_pytest_html_embeds_the_screenshot_and_links_the_rest(pytester, sem_aparelhos):
+    pytest.importorskip("pytest_html")
+    pytester.makeconftest(CONFTEST)
+    pytester.makepyfile("def test_falha(device): assert False")
+    pytester.runpytest("--serial", "S1", "--html=report.html", "--self-contained-html")
+    html = (pytester.path / "report.html").read_text()
+    assert "UE5HLUJZVEVT" in html  # base64 of b"PNG-BYTES": the screenshot is inside the report
+    assert "S1 logcat.txt" in html and "S1 window_dump.xml" in html
