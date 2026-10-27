@@ -2,6 +2,7 @@
 
 import json
 import threading
+import time
 import urllib.request
 
 import pytest
@@ -44,16 +45,30 @@ def test_recorded_tap_replays(dev, server):
     assert dev.await_for_activity(SETTINGS, timeout=20)
     assert _get(server, "api/screenshot")[:4] == b"\x89PNG"
 
-    nodes = json.loads(_get(server, "api/hierarchy"))["nodes"]
-    alvo = next(
-        n
-        for n in nodes
-        if n["attrs"].get("package") == SETTINGS
-        and n["attrs"].get("clickable") == "true"
-        and not n["selector"]["fragile"]
-        and n["bounds"]
-        and n["bounds"][1] > 0
+    # Settings resumes before its list is drawn: wait for a clickable item with a stable selector.
+    alvo, clicaveis = None, []
+    for _ in range(20):
+        nodes = json.loads(_get(server, "api/hierarchy"))["nodes"]
+        clicaveis = [n for n in nodes if n["attrs"].get("clickable") == "true"]
+        alvo = next(
+            (
+                n
+                for n in clicaveis
+                if n["attrs"].get("package") == SETTINGS
+                and not n["selector"]["fragile"]
+                and n["bounds"]
+                and n["bounds"][1] > 0
+            ),
+            None,
+        )
+        if alvo is not None:
+            break
+        time.sleep(1)
+    resumo = "\n".join(
+        f"{n['attrs'].get('package')} {n['attrs'].get('class')} {n['bounds']} -> {n['selector']}"
+        for n in clicaveis
     )
+    assert alvo is not None, f"no clickable Settings element with a stable selector:\n{resumo}"
     linha = _post(server, "api/action", {"type": "click", "node": alvo["index"], "record": True})[
         "code"
     ]
