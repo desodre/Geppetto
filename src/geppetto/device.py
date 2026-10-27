@@ -14,6 +14,7 @@ from .core.adb import AdbClient
 from .core.fastboot import FastbootClient
 from .exceptions import DeviceTimeoutError
 from .models.by import By
+from .recording import ScreenRecording
 from .services.lockscreen import LockscreenService
 from .services.notification import NotificationService
 from .services.wifi import WifiService
@@ -354,6 +355,21 @@ class Device:
             self.adb.rm(device_path)
             return local_path
         return device_path
+
+    # ── Logcat ───────────────────────────────────────────────────────
+
+    def clear_logcat(self) -> None:
+        """Empty the device log buffers (``logcat -c``)."""
+        self.adb.shell("logcat -c")
+
+    def dump_logcat(self, *, fmt: str = "threadtime") -> str:
+        """Everything in the log buffers right now (``logcat -d``), in format *fmt*."""
+        return self.adb.shell(["logcat", "-d", "-v", fmt])
+
+    def start_recording(self, name: str = "", time_limit: int = 180) -> ScreenRecording:
+        """Start recording the screen in the background; finish it with
+        ``stop(save_to)`` or ``discard()``. Android caps recordings at 180 s."""
+        return ScreenRecording(self.adb, self._media_name(name, "mp4")[:-4], time_limit).start()
 
     # ── Phone & Bluetooth ────────────────────────────────────────────
 

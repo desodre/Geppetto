@@ -86,6 +86,9 @@ ignore = []
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+# This suite tests the library with a fake adb: the plugin's own capture stays off here
+# (tests/test_pytest_plugin.py exercises it in pytester runs, which have their own ini).
+geppetto_artifacts = "never"
 
 [tool.mypy]
 python_version = "3.12"

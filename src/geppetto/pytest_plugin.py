@@ -14,6 +14,13 @@ Options (also settable in ``[tool.pytest.ini_options]`` through the ini names):
 ``--serial``               device serial; repeat for several (env ``GEPPETTO_SERIAL``, comma list)
 ``--all-devices``          every device ``adb devices`` reports as ready
 ``--geppetto-output``      result folder (default ``./results``)
+``--geppetto-artifacts``   ``on-failure`` (default), ``always`` or ``never``
+``--geppetto-record``      record the screen during each device test (kept with the artifacts)
+
+Artifacts of a device test go to ``<device result folder>/Tests/<test id>/``: ``screenshot.png``,
+``window_dump.xml``, ``logcat.txt`` (only what the test produced: the buffer is cleared before it)
+and ``screenrecord.mp4`` with ``--geppetto-record``. One failing artifact never hides the others:
+its error goes to ``<name>.error.txt``.
 
 Fixtures:
 
@@ -25,8 +32,11 @@ Fixtures:
 
 from __future__ import annotations
 
+import logging
 import os
-from collections.abc import Callable, Iterator
+import re
+from collections.abc import Callable, Generator, Iterator
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -36,6 +46,9 @@ from .core.adb import list_devices
 
 if TYPE_CHECKING:  # Device pulls uiautomator2: imported only when a test asks for a device
     from .device import Device
+    from .recording import ScreenRecording
+
+logger = logging.getLogger("geppetto.pytest")
 
 DeviceFactory = Callable[[str], "Device"]
 
@@ -64,7 +77,23 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         metavar="DIR",
         help="Folder for logs and artifacts (default: ini geppetto_output or ./results).",
     )
+    group.addoption(
+        "--geppetto-artifacts",
+        choices=("on-failure", "always", "never"),
+        default=None,
+        dest="geppetto_artifacts",
+        help="When to save screenshot/window dump/logcat/video of device tests "
+        "(default: ini geppetto_artifacts or on-failure).",
+    )
+    group.addoption(
+        "--geppetto-record",
+        action="store_true",
+        default=False,
+        dest="geppetto_record",
+        help="Record the screen during each device test (max 180 s per test, Android limit).",
+    )
     parser.addini("geppetto_output", "Folder for logs and artifacts.", default="./results")
+    parser.addini("geppetto_artifacts", "on-failure | always | never", default="on-failure")
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -125,6 +154,117 @@ def devices(geppetto_serials: list[str], geppetto_device_factory: DeviceFactory)
 def device(devices: list[Device]) -> Iterator[Device]:
     """The first selected device (session scope)."""
     yield devices[0]
+
+
+# ── Artifacts ────────────────────────────────────────────────────────
+
+
+@dataclass
+class _Capture:
+    """What the plugin tracks for one test on one device."""
+
+    device: Device
+    recording: ScreenRecording | None = None
+    folder: Path | None = None
+    artifacts: dict[str, Path] = field(default_factory=dict)
+
+
+_CAPTURES = pytest.StashKey[list[_Capture]]()
+
+
+def _artifacts_mode(config: pytest.Config) -> str:
+    return str(config.getoption("geppetto_artifacts") or config.getini("geppetto_artifacts"))
+
+
+def _uses_device(item: pytest.Item) -> bool:
+    return bool({"device", "devices"} & set(getattr(item, "fixturenames", ())))
+
+
+def _safe_name(nodeid: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "_", nodeid).strip("_")[:150] or "test"
+
+
+def _save(capture: _Capture, name: str, write: Callable[[Path], object]) -> None:
+    """Write one artifact; a failure becomes ``<name>.error.txt`` and never stops the others."""
+    assert capture.folder is not None
+    path = capture.folder / name
+    try:
+        write(path)
+        capture.artifacts[name] = path
+    except Exception as erro:  # noqa: BLE001 — the test result matters more than one artifact
+        (capture.folder / f"{name}.error.txt").write_text(f"{type(erro).__name__}: {erro}\n")
+        logger.warning("Could not save %s for %s: %s", name, capture.device.serial, erro)
+
+
+def _collect_one(item: pytest.Item, capture: _Capture) -> None:
+    dev = capture.device
+    capture.folder = Path(dev.result_path) / "Tests" / _safe_name(item.nodeid)
+    capture.folder.mkdir(parents=True, exist_ok=True)
+    _save(capture, "screenshot.png", lambda p: p.write_bytes(dev.adb.exec_out("screencap -p")))
+    _save(capture, "window_dump.xml", lambda p: p.write_text(str(dev.get_window_dump())))
+    _save(capture, "logcat.txt", lambda p: p.write_text(dev.dump_logcat()))
+    recording = capture.recording
+    if recording is not None:
+        capture.recording = None
+        _save(capture, "screenrecord.mp4", lambda p: recording.stop(p))
+
+
+def _collect(item: pytest.Item) -> None:
+    for capture in item.stash.get(_CAPTURES, []):
+        if capture.folder is None:  # setup failed, then call: collect once
+            _collect_one(item, capture)
+
+
+@pytest.fixture(autouse=True)
+def _geppetto_capture(request: pytest.FixtureRequest) -> Generator[None]:
+    """Before a device test: clear logcat, start recording; after: drop what is not needed."""
+    item = request.node
+    if not _uses_device(item) or _artifacts_mode(request.config) == "never":
+        yield
+        return
+    # The devices this test really uses (a conftest may override `device` alone).
+    used = (
+        request.getfixturevalue("devices")
+        if "devices" in item.fixturenames
+        else [request.getfixturevalue("device")]
+    )
+    captures = []
+    for dev in used:
+        try:
+            dev.clear_logcat()
+        except Exception as erro:  # noqa: BLE001
+            logger.warning("Could not clear logcat on %s: %s", dev.serial, erro)
+        recording = None
+        if request.config.getoption("geppetto_record"):
+            try:
+                recording = dev.start_recording(_safe_name(item.name))
+            except Exception as erro:  # noqa: BLE001
+                logger.warning("Could not start recording on %s: %s", dev.serial, erro)
+        captures.append(_Capture(dev, recording))
+    item.stash[_CAPTURES] = captures
+    yield
+    for capture in captures:
+        if capture.recording is not None:  # test passed and artifacts were not kept
+            capture.recording.discard()
+            capture.recording = None
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[None]
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    report = yield
+    if _CAPTURES not in item.stash or report.when == "teardown":
+        return report
+    mode = _artifacts_mode(item.config)
+    if report.failed or (mode == "always" and report.when == "call"):
+        _collect(item)
+        for capture in item.stash[_CAPTURES]:
+            if capture.folder is not None:
+                report.sections.append(
+                    (f"geppetto artifacts ({capture.device.serial})", str(capture.folder))
+                )
+    return report
 
 
 def pytest_collection_modifyitems(items: list[pytest.Item]) -> None:
