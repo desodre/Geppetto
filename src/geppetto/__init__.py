@@ -10,7 +10,13 @@ from typing import Any
 
 from ._logging import DeviceLogger
 from .device import Device
-from .exceptions import DeviceIsSecureError, DeviceTimeoutError, WidgetNotFoundError
+from .exceptions import (
+    DeviceIsSecureError,
+    DeviceNotFoundError,
+    DeviceTimeoutError,
+    GeppettoError,
+    WidgetNotFoundError,
+)
 from .models.by import By
 from .models.common_classes import CommonClasses
 from .models.direction import Direction
@@ -57,7 +63,9 @@ __all__ = [
     "WifiSecurityType",
     "CommonClasses",
     # Exceptions
+    "GeppettoError",
     "DeviceIsSecureError",
+    "DeviceNotFoundError",
     "DeviceTimeoutError",
     "WidgetNotFoundError",
     # Logging
