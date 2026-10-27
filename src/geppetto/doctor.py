@@ -130,7 +130,7 @@ def check_ready_device(entry: host.DeviceEntry) -> list[Check]:
             entry.serial,
             "shell",
             "getprop sys.boot_completed; getprop ro.build.version.release; "
-            f"getprop ro.product.model; ls {U2_AGENT} 2>/dev/null",
+            f"getprop ro.product.model; ls {U2_AGENT} 2>/dev/null || true",  # missing agent: exit 1
         )
     except GeppettoError as e:
         return [Check(name, Status.FAIL, f"adb shell failed: {e}", "Reconnect the device.")]

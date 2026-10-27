@@ -146,3 +146,12 @@ def test_version(capsys):
     with pytest.raises(SystemExit):
         cli.main(["--version"])
     assert capsys.readouterr().out.startswith("geppetto ")
+
+
+def test_doctor_does_not_fail_when_the_agent_is_missing(monkeypatch):
+    comandos = []
+    monkeypatch.setattr(
+        doctor.host, "run_adb", lambda *a, **k: comandos.append(a[-1]) or "1\n14\nPixel\n"
+    )
+    doctor.check_ready_device(host.DeviceEntry("S", "device"))
+    assert comandos[0].endswith("|| true")  # `ls` of a missing agent exits 1 and failed the check

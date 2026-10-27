@@ -35,10 +35,29 @@ def test_is_installed_is_an_exact_match(device, adb_run):
     assert device.is_installed("com.app") is True
 
 
-def test_await_widget_by_xpath_uses_u2_xpath(device):
+def test_await_widget_by_xpath_polls_the_raw_dump(device):
+    # Same <node> XPath as WindowDump.find_widget (uiautomator2's engine uses class tags).
     widget = device.await_widget(By.XPATH, "//node[@resource-id='com.app:id/login']")
     assert widget.text == "Login"
-    assert device._u2.selectors == [{"xpath": "//node[@resource-id='com.app:id/login']"}]
+    assert device._u2.selectors == []
+
+
+def test_await_widget_by_xpath_waits_until_it_appears(device, monkeypatch):
+    from .conftest import DUMP
+
+    dumps = iter(["<hierarchy/>", "<hierarchy/>", DUMP])
+    monkeypatch.setattr(device._u2, "dump_hierarchy", lambda: next(dumps))
+    monkeypatch.setattr("geppetto.device.time.sleep", lambda s: None)
+    assert (
+        device.await_widget(By.XPATH, "//node[@text='Login']", timeout=5).id == "com.app:id/login"
+    )
+
+
+def test_await_widget_by_xpath_times_out(device, monkeypatch):
+    monkeypatch.setattr(device._u2, "dump_hierarchy", lambda: "<hierarchy/>")
+    monkeypatch.setattr("geppetto.device.time.sleep", lambda s: None)
+    with pytest.raises(DeviceTimeoutError):
+        device.await_widget(By.XPATH, "//node[@text='Nope']", timeout=0)
 
 
 def test_await_widget_maps_the_other_strategies(device):

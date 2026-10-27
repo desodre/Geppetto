@@ -12,7 +12,7 @@ from uiautomator2 import Device as U2Device
 from ._logging import DeviceLogger
 from .core.adb import AdbClient, wait_for_boot
 from .core.fastboot import FastbootClient
-from .exceptions import DeviceTimeoutError
+from .exceptions import DeviceTimeoutError, WidgetNotFoundError
 from .models.by import By
 from .recording import ScreenRecording
 from .services.lockscreen import LockscreenService
@@ -287,8 +287,18 @@ class Device:
             By.CONTENT_DESC: "description",
         }
         if by is By.XPATH:
-            # uiautomator2 has no `xpath=` selector: XPath goes through `d.xpath(...)`.
-            appeared = bool(self._u2.xpath(value).wait(timeout=timeout))
+            # Poll our own dump: uiautomator2's XPath engine names elements by class
+            # (//android.widget.TextView) while WindowDump keeps the raw <node> tags, so the same
+            # expression must be evaluated by the same engine that find_widget uses.
+            deadline = time.monotonic() + timeout
+            while True:
+                try:
+                    return self.get_window_dump().find_widget(by, value)
+                except WidgetNotFoundError:
+                    if time.monotonic() >= deadline:
+                        break
+                    time.sleep(0.5)
+            appeared = False
         elif by in selector_map:
             appeared = bool(self._u2(**{selector_map[by]: value}).wait(timeout=timeout))
         else:
