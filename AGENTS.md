@@ -37,6 +37,9 @@ src/geppetto/
     emulator.py      SDK lookup, AVDs, start (waits for boot) / stop, snapshots
   doctor.py          environment checks; every non-OK Check carries a fix
   cli.py             `geppetto` console script (argparse, no extra deps; QR needs [cli])
+  inspector/         `geppetto inspect`: selectors.py (recommend: unique-only, stable first),
+                     recorder.py (actions → runnable script), server.py (stdlib http.server,
+                     127.0.0.1 by default, one device lock), static/index.html (vanilla JS page)
   ui/                pure data: Bounds, Widget (keeps its lxml node), Children, WindowDump
   models/            enums: By, Direction, WifiSecurityType, CommonClasses
   services/          OS features on top of AdbClient: wifi, lockscreen, notification
@@ -136,6 +139,9 @@ If the machine has no Python 3.12, `UV_PYTHON=3.14 uv sync --group dev` works lo
 ## Gotchas
 
 - **`adb shell` re-parses on the device** (see rule 1). `adb exec-out` has the same behaviour.
+- **Recommended selectors must be unique in the dump**: `By.ID/TEXT/CONTENT_DESC` return the first
+  match, so a shared value would record a tap on another element. `tests/test_inspector.py` checks
+  that every recommended selector finds exactly its own node; keep that test passing.
 - **`input text`**: a raw space ends the text; spaces must be `%s` (done by `Device.input_text`).
 - **uiautomator2 XPath** is `d.xpath(expr)`, not `d(xpath=...)`.
 - **lxml XPath** can return numbers/strings (`count(...)`): filter for `etree._Element`.

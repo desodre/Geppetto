@@ -145,7 +145,34 @@ geppetto emulator stop emulator-5554
 geppetto pair 192.168.0.10:40111 123456   # Wireless debugging › Pair device with pairing code
 geppetto pair --qr                        # …or scan a QR code (pip install 'geppetto-android[cli]')
 geppetto connect 192.168.0.10:37000
+
+geppetto inspect                          # screen + selectors in the browser, records code
 ```
+
+### Inspector
+
+```bash
+geppetto inspect            # opens http://127.0.0.1:8765/ for the only connected device
+```
+
+The device screen in your browser. Hover to highlight elements; click one to see its attributes and
+the **recommended selector** (the most stable one that matches only that element: resource-id,
+content-desc, text, id + text, relative to a parent with a unique id, and only as a last resort a
+position, flagged as fragile). Switch to **Record** and your taps, typing and Back/Home presses are
+executed on the device and turned into a runnable script (copy or download it):
+
+```python
+from geppetto import By, Device
+
+
+def main() -> None:
+    device = Device('emulator-5554')
+    device.click(device.await_widget(By.ID, 'com.android.settings:id/search_action_bar'))
+    device.input_text('wifi')
+```
+
+It listens on `127.0.0.1` only (the page can tap and type on the device); `--host` exposes it on
+purpose, `--port 0` picks a free port. The first run installs the uiautomator2 agent on the device.
 
 Commands that need one device take `-s/--serial`, then `GEPPETTO_SERIAL`, then the only ready
 device. Errors print one line on stderr and exit with 1. `geppetto doctor` exits with 1 when a
@@ -156,7 +183,8 @@ the default install folder).
 
 - `Device`: primary facade and entry point.
 - `geppetto.pytest_plugin`: fixtures, CLI options and failure artifacts for pytest.
-- `geppetto` command line (`geppetto.cli`): devices, doctor, shot, record, emulator, pairing.
+- `geppetto` command line (`geppetto.cli`): devices, doctor, shot, record, emulator, pairing, inspect.
+- `geppetto.inspector`: selector recommendation, code recorder and the local web inspector.
 - `geppetto.core`: ADB/Fastboot clients.
 - `geppetto.ui`: UI models (`WindowDump`, `Widget`, `Bounds`, `Children`).
 - `geppetto.services`: automation services (`wifi`, `lockscreen`, `notification`).

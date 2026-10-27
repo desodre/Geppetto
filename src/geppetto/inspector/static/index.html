@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geppetto Inspector</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2433; --muted: #5d6677; --line: #dfe3ea;
+    --accent: #2f6fed; --accent-ink: #ffffff; --hover: rgba(47,111,237,.18); --pick: #e8590c;
+    --code-bg: #f1f3f7; --warn: #a15c00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #13161c; --panel: #1b1f27; --ink: #e6e9ef; --muted: #9aa3b2; --line: #2c3240;
+      --accent: #6b9bff; --accent-ink: #0b0e14; --hover: rgba(107,155,255,.22); --pick: #ff8a3d;
+      --code-bg: #232835; --warn: #ffb454;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+  header h1 { font-size: 16px; margin: 0; }
+  header .serial { color: var(--muted); font-family: ui-monospace, monospace; }
+  header .spacer { flex: 1; }
+  main { display: grid; grid-template-columns: minmax(260px, 46%) 1fr; gap: 16px; padding: 16px; height: calc(100vh - 53px); }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; height: auto; } }
+  .screen { position: relative; overflow: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; display: flex; justify-content: center; align-items: flex-start; padding: 12px; }
+  .stage { position: relative; display: inline-block; max-width: 100%; }
+  .stage img { display: block; max-width: 100%; max-height: calc(100vh - 130px); height: auto; border-radius: 6px; cursor: crosshair; user-select: none; }
+  .box { position: absolute; pointer-events: none; border: 2px solid var(--accent); background: var(--hover); border-radius: 3px; display: none; }
+  .box.pick { border-color: var(--pick); background: transparent; }
+  .side { display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+  section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  button, input[type=text] { font: inherit; border-radius: 7px; border: 1px solid var(--line); padding: 6px 10px; background: var(--panel); color: var(--ink); }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  input[type=text] { flex: 1; min-width: 140px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; border-radius: 0; }
+  .seg button[aria-pressed=true] { background: var(--accent); color: var(--accent-ink); }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  td { padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; word-break: break-all; }
+  td:first-child { color: var(--muted); white-space: nowrap; width: 1%; word-break: normal; }
+  pre, code { font-family: ui-monospace, "SFMono-Regular", Consolas, monospace; font-size: 12.5px; }
+  pre { background: var(--code-bg); border-radius: 8px; padding: 10px; margin: 8px 0 0; overflow: auto; white-space: pre; }
+  .hint { color: var(--muted); font-size: 13px; }
+  .warn { color: var(--warn); font-size: 13px; }
+  #status { color: var(--muted); font-size: 13px; }
+  #status.err { color: var(--pick); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Geppetto Inspector</h1>
+  <span class="serial" id="serial"></span>
+  <span class="spacer"></span>
+  <span id="status" role="status" aria-live="polite"></span>
+  <button id="refresh" title="Reload screen and hierarchy (R)">Refresh</button>
+</header>
+<main>
+  <div class="screen">
+    <div class="stage" id="stage">
+      <img id="shot" alt="Device screen">
+      <div class="box" id="hoverBox"></div>
+      <div class="box pick" id="pickBox"></div>
+    </div>
+  </div>
+  <div class="side">
+    <section>
+      <h2>Mode</h2>
+      <div class="row">
+        <div class="seg" role="group" aria-label="Mode">
+          <button id="modeInspect" aria-pressed="true">Inspect</button>
+          <button id="modeRecord" aria-pressed="false">Record</button>
+        </div>
+        <span class="hint" id="modeHint">Click an element to see its selector. Nothing is sent to the device.</span>
+      </div>
+    </section>
+    <section>
+      <h2>Selected element</h2>
+      <p class="hint" id="emptyPick">Hover the screen and click an element.</p>
+      <div id="pickInfo" hidden>
+        <pre id="selectorCode"></pre>
+        <div class="row" style="margin-top:8px">
+          <button id="copySelector">Copy selector</button>
+          <span class="warn" id="fragile" hidden>Position-based selector: it breaks if similar elements are added.</span>
+        </div>
+        <table id="attrs" style="margin-top:8px"></table>
+      </div>
+    </section>
+    <section>
+      <h2>Device</h2>
+      <div class="row">
+        <input type="text" id="text" placeholder="Text to type into the focused field" aria-label="Text to type">
+        <button id="sendText">Type</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button data-key="back">Back</button>
+        <button data-key="home">Home</button>
+        <button data-key="enter">Enter</button>
+        <button data-key="app_switch">Recent apps</button>
+      </div>
+      <p class="hint">Buttons and typing act on the device; in Record mode they are also recorded.</p>
+    </section>
+    <section>
+      <h2>Recorded script</h2>
+      <div class="row">
+        <button id="copyScript">Copy</button>
+        <button id="downloadScript">Download .py</button>
+        <button id="clearScript">Clear</button>
+      </div>
+      <pre id="script"></pre>
+    </section>
+  </div>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  let nodes = [], recording = false, picked = null;
+
+  function status(text, isError = false) {
+    $("status").textContent = text;
+    $("status").className = isError ? "err" : "";
+  }
+
+  async function api(path, body) {
+    const res = await fetch(path, body === undefined ? {} : {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  }
+
+  async function load() {
+    status("Loading…");
+    try {
+      const data = await api("/api/hierarchy");
+      nodes = data.nodes;
+      $("serial").textContent = data.serial;
+      await new Promise((resolve, reject) => {
+        $("shot").onload = resolve;
+        $("shot").onerror = () => reject(new Error("screenshot failed"));
+        $("shot").src = "/api/screenshot?t=" + Date.now();
+      });
+      picked = null;
+      showPick();
+      status(nodes.length + " elements");
+    } catch (e) {
+      status(e.message, true);
+    }
+  }
+
+  function scale() {
+    const img = $("shot");
+    return img.naturalWidth ? img.clientWidth / img.naturalWidth : 1;
+  }
+
+  // The innermost element under the point: smallest area, deepest on ties.
+  function nodeAt(x, y) {
+    let best = null;
+    for (const n of nodes) {
+      const b = n.bounds;
+      if (!b || x < b[0] || x > b[2] || y < b[1] || y > b[3]) continue;
+      const area = (b[2] - b[0]) * (b[3] - b[1]);
+      if (!best || area < best.area || (area === best.area && n.depth > best.node.depth)) {
+        best = { node: n, area };
+      }
+    }
+    return best && best.node;
+  }
+
+  function place(box, node) {
+    if (!node || !node.bounds) { box.style.display = "none"; return; }
+    const s = scale(), b = node.bounds;
+    Object.assign(box.style, {
+      display: "block", left: b[0] * s + "px", top: b[1] * s + "px",
+      width: (b[2] - b[0]) * s + "px", height: (b[3] - b[1]) * s + "px",
+    });
+  }
+
+  function devicePoint(event) {
+    const rect = $("shot").getBoundingClientRect(), s = scale();
+    return [(event.clientX - rect.left) / s, (event.clientY - rect.top) / s];
+  }
+
+  function showPick() {
+    place($("pickBox"), picked);
+    $("emptyPick").hidden = !!picked;
+    $("pickInfo").hidden = !picked;
+    if (!picked) return;
+    $("selectorCode").textContent = picked.selector.code;
+    $("fragile").hidden = !picked.selector.fragile;
+    const keys = ["text", "resource-id", "content-desc", "class", "package", "bounds", "clickable", "enabled", "checked", "focused", "scrollable"];
+    $("attrs").replaceChildren(...keys.filter((k) => picked.attrs[k] !== undefined).map((k) => {
+      const tr = document.createElement("tr");
+      const a = document.createElement("td"), b = document.createElement("td");
+      a.textContent = k; b.textContent = picked.attrs[k];
+      tr.append(a, b);
+      return tr;
+    }));
+  }
+
+  async function refreshScript() {
+    const data = await api("/api/code");
+    $("script").textContent = data.script;
+  }
+
+  async function act(body) {
+    status("Sending…");
+    try {
+      const data = await api("/api/action", { ...body, record: recording });
+      if (data.code) await refreshScript();
+      setTimeout(load, 700); // let the UI react before the next screenshot
+    } catch (e) {
+      status(e.message, true);
+    }
+  }
+
+  $("shot").addEventListener("mousemove", (e) => place($("hoverBox"), nodeAt(...devicePoint(e))));
+  $("shot").addEventListener("mouseleave", () => place($("hoverBox"), null));
+  $("shot").addEventListener("click", (e) => {
+    const [x, y] = devicePoint(e);
+    const node = nodeAt(x, y);
+    if (!recording) { picked = node; showPick(); return; }
+    act(node ? { type: "click", node: node.index } : { type: "tap", x, y });
+  });
+
+  function setMode(rec) {
+    recording = rec;
+    $("modeInspect").setAttribute("aria-pressed", String(!rec));
+    $("modeRecord").setAttribute("aria-pressed", String(rec));
+    $("modeHint").textContent = rec
+      ? "Clicks tap the device and are added to the script."
+      : "Click an element to see its selector. Nothing is sent to the device.";
+  }
+  $("modeInspect").onclick = () => setMode(false);
+  $("modeRecord").onclick = () => setMode(true);
+
+  $("sendText").onclick = () => { if ($("text").value) act({ type: "text", text: $("text").value }); };
+  $("text").addEventListener("keydown", (e) => { if (e.key === "Enter") $("sendText").click(); });
+  document.querySelectorAll("[data-key]").forEach((b) => { b.onclick = () => act({ type: "key", key: b.dataset.key }); });
+
+  async function copy(text, label) {
+    try { await navigator.clipboard.writeText(text); status(label + " copied"); }
+    catch { status("Copy failed: select the text manually", true); }
+  }
+  $("copySelector").onclick = () => picked && copy(picked.selector.code, "Selector");
+  $("copyScript").onclick = () => copy($("script").textContent, "Script");
+  $("downloadScript").onclick = () => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([$("script").textContent], { type: "text/x-python" }));
+    a.download = "recorded_flow.py";
+    a.click();
+  };
+  $("clearScript").onclick = async () => { await api("/api/code/clear", {}); await refreshScript(); };
+  $("refresh").onclick = load;
+  document.addEventListener("keydown", (e) => { if (e.key === "r" && e.target.tagName !== "INPUT") load(); });
+  window.addEventListener("resize", () => { place($("pickBox"), picked); });
+
+  load();
+  refreshScript();
+})();
+</script>
+</body>
+</html>

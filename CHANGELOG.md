@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **`geppetto inspect`**: the device screen in the browser with hover highlight, element attributes
+  and the recommended selector (unique in the dump, stable attributes first, position-based ones
+  flagged as fragile); **Record** mode taps/types/presses keys on the device and builds a runnable
+  Python script (copy / download). Local-only by default (`--host` to expose, `--port 0` for a free
+  port). Standard library only.
+- `geppetto.inspector`: `recommend()`/`Selector`, `xpath_literal()`, `Recorder`, `InspectorServer`,
+  `hierarchy_json()`.
+
 ## 2.1.0
 
 ### Highlights
