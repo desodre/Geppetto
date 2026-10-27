@@ -1,8 +1,8 @@
 # Changelog
 
-## Unreleased
+## 2.1.0
 
-### Added
+### Highlights
 - **pytest plugin** (registered automatically): `device`/`devices` fixtures, `--serial`
   (repeatable, or `GEPPETTO_SERIAL`), `--all-devices`, `--geppetto-output`,
   `--geppetto-artifacts on-failure|always|never`, `--geppetto-record`; tests without a device are
@@ -21,12 +21,10 @@
   AVDs, start waiting for the boot, stop, snapshots), `geppetto.doctor`,
   `core.adb.wait_for_boot`; exceptions `AdbCommandError` and `EmulatorError`.
 
-## 2.1.0
-
 ### Fixed
 - `Device.input_text` typed only the first word: spaces are now sent as `%s`.
-- `Device.await_widget(By.XPATH, …)` used a selector uiautomator2 does not have; it now goes
-  through `d.xpath(...)`.
+- `Device.await_widget(By.XPATH, …)` used a selector uiautomator2 does not have; it now polls the
+  `WindowDump`, so the same `//node[...]` expression works for waiting and for `find_widget`.
 - `WindowDump.find_widget` / `set_children` broke on text with an apostrophe (`Don't allow`) and
   could return the children of another node; children now come from the widget's own XML node.
   An XPath that returns a number (e.g. `count(...)`) is a "not found", not a crash.
@@ -57,6 +55,7 @@
   `NullHandler`, so applications control logging.
 - `AcronameController` is a context manager; `reset_and_close` now really closes.
 - `Direction.UP` / `Direction.DOWN` (`Up` / `Down` kept as aliases).
+- Integration tests on a real emulator in CI for the `dev` branch (`dev.yml`), next to the unit tests.
 - Unit tests (no device needed) and a CI workflow (ruff, mypy, pytest on 3.12/3.13) that the
   PyPI publish depends on; the tag must match the package version.
 
