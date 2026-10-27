@@ -1,25 +1,20 @@
 from __future__ import annotations
 
-import os
-import shlex
 import subprocess
 import time
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from time import sleep
-from typing import TYPE_CHECKING, cast
+from typing import cast
 
 from uiautomator2 import Device as U2Device
 
-if TYPE_CHECKING:
-    pass
-
 from ._logging import DeviceLogger
-from .core.adb import AdbClient
+from .core.adb import AdbClient, wait_for_boot
 from .core.fastboot import FastbootClient
-from .exceptions import DeviceTimeoutError
+from .exceptions import DeviceTimeoutError, WidgetNotFoundError
 from .models.by import By
+from .recording import ScreenRecording
 from .services.lockscreen import LockscreenService
 from .services.notification import NotificationService
 from .services.wifi import WifiService
@@ -47,7 +42,25 @@ class Device:
         ENABLE = "enable"
         DISABLE = "disable"
 
-    def __init__(self, serial: str, output_dir: str | Path = "./results") -> None:
+    #: Folders inside :attr:`result_path` where captured media is saved.
+    SCREENSHOTS_DIR = Path("Images") / "Screenshots"
+    SCREENRECORDS_DIR = Path("Videos") / "Screenrecords"
+    #: Where media is written on the device before being pulled.
+    DEVICE_MEDIA_DIR = "/sdcard/DCIM/Geppetto"
+
+    def __init__(
+        self,
+        serial: str,
+        output_dir: str | Path = "./results",
+        *,
+        log_to_console: bool = True,
+        log_to_file: bool = True,
+    ) -> None:
+        """Connect to the device *serial*.
+
+        Raises:
+            DeviceNotFoundError: When the device does not answer adb.
+        """
         self._serial = serial
 
         # ── Transport Layers ─────────────────────────────────────────
@@ -58,22 +71,18 @@ class Device:
         # ── Result Directory Setup ───────────────────────────────────
         run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.result_path = Path(output_dir) / f"{run_ts}_{serial}"
-        os.makedirs(self.result_path / "Images" / "Screenshots", exist_ok=True)
-        os.makedirs(self.result_path / "Images" / "Pictures", exist_ok=True)
-        os.makedirs(self.result_path / "Logs", exist_ok=True)
+        for folder in (self.SCREENSHOTS_DIR, self.SCREENRECORDS_DIR, Path("Logs")):
+            (self.result_path / folder).mkdir(parents=True, exist_ok=True)
 
         # ── Logger ───────────────────────────────────────────────────
-        effective_serial = self.adb.real_serial if self.adb.real_serial != serial else serial
+        effective_serial = self.adb.real_serial or serial
+        log_dir = self.result_path if log_to_file else None
         self.logger = DeviceLogger.get_logger(
-            effective_serial,
-            "Device",
-            result_dir=self.result_path,
+            effective_serial, "Device", result_dir=log_dir, log_to_console=log_to_console
         )
         # Also configure the ADB transport logger to write to result dir
         self.adb.logger = DeviceLogger.get_logger(
-            effective_serial,
-            "ADB",
-            result_dir=self.result_path,
+            effective_serial, "ADB", result_dir=log_dir, log_to_console=log_to_console
         )
         if self.adb.real_serial != serial:
             self.logger.warning(
@@ -119,7 +128,8 @@ class Device:
     # ── Device Info Queries ──────────────────────────────────────────
 
     def get_os(self) -> str:
-        return self.adb.shell("getprop ro.system_ext.build.version.release_or_codename").strip()
+        """Android release (e.g. ``"14"``), from ``ro.build.version.release``."""
+        return self.adb.shell("getprop ro.build.version.release").strip()
 
     def get_activity(self) -> str | None:
         raw = self.adb.shell("dumpsys activity activities")
@@ -140,7 +150,9 @@ class Device:
         return any(s in ("READY", "LOADED") for s in states)
 
     def is_installed(self, package_name: str) -> bool:
-        return package_name in self.adb.shell(f"pm list packages {package_name}")
+        """Exact match: ``com.app`` is not reported installed because ``com.app.debug`` is."""
+        output = self.adb.shell(["pm", "list", "packages", package_name])
+        return f"package:{package_name}" in output.split()
 
     # ── App Management ───────────────────────────────────────────────
 
@@ -169,21 +181,22 @@ class Device:
         if bypass_low_target_sdk_block:
             flags.append("--bypass-low-target-sdk-block")
 
-        cmd = f"install {' '.join(flags)} {path_app}" if flags else f"install {path_app}"
         self.logger.info("Installing %s (flags: %s)", path_app, flags or "none")
-        return self.adb.cmd(cmd)
+        return self.adb.cmd(["install", *flags, str(path_app)])
 
     def open_activity(self, activity: str) -> str:
         self.logger.info("Opening activity: %s", activity.split("/")[-1])
-        return self.adb.shell(f"am start -n {activity}")
+        return self.adb.shell(["am", "start", "-n", activity])
 
     def open_app(self, package: str) -> str:
         self.logger.info("Opening: %s", package)
-        return self.adb.shell(f"monkey -p {package} -c android.intent.category.LAUNCHER 1")
+        return self.adb.shell(
+            ["monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1"]
+        )
 
     def kill_app(self, package_name: str) -> None:
         self.logger.info("Killing app: %s", package_name)
-        self.adb.shell(f"am force-stop {package_name}")
+        self.adb.shell(["am", "force-stop", package_name])
 
     # ── UI Interaction ───────────────────────────────────────────────
 
@@ -227,15 +240,20 @@ class Device:
         dest: Bounds,
         duration: float = 1000,
     ) -> None:
+        """Long-press *source* and drop it on *dest* (``input draganddrop``, Android 7+)."""
         self.logger.info("Drag %s → %s", source.center, dest.center)
-        self.adb.shell(
-            f"input swipe {source.center[0]} {source.center[1]} "
-            f"{dest.center[0]} {dest.center[1]} {int(duration)}"
-        )
+        (x1, y1), (x2, y2) = source.center, dest.center
+        self.adb.shell(["input", "draganddrop", x1, y1, x2, y2, int(duration)])
 
-    def input_text(self, text: str) -> None:
-        self.logger.info("Input text: %s", text)
-        self.adb.shell(f"input text {shlex.quote(text)}")
+    def input_text(self, text: str, *, log_text: bool = True) -> None:
+        """Type *text* into the focused field.
+
+        ``input text`` reads ``%s`` as a space and stops at a raw space, so spaces are
+        encoded; every other character goes quoted for the device shell. Pass
+        ``log_text=False`` for passwords and other secrets.
+        """
+        self.logger.info("Input text: %s", text if log_text else "<hidden>")
+        self.adb.shell(["input", "text", text.replace(" ", "%s")])
 
     def key_event(self, keycode: int) -> None:
         self.logger.info("Key event: %d", keycode)
@@ -243,7 +261,7 @@ class Device:
 
     def fast_app_swipe(self) -> None:
         self.key_event(187)  # KEYCODE_APP_SWITCH
-        sleep(1)
+        time.sleep(1)
         self.key_event(187)
 
     # ── UI Hierarchy ─────────────────────────────────────────────────
@@ -263,25 +281,38 @@ class Device:
             DeviceTimeoutError: When the widget doesn't appear in time.
         """
         selector_map = {
-            By.TEXT: {"text": value},
-            By.ID: {"resourceId": value},
-            By.CLASS: {"className": value},
-            By.CONTENT_DESC: {"description": value},
-            By.XPATH: {"xpath": value},
+            By.TEXT: "text",
+            By.ID: "resourceId",
+            By.CLASS: "className",
+            By.CONTENT_DESC: "description",
         }
-        if by not in selector_map:
+        if by is By.XPATH:
+            # Poll our own dump: uiautomator2's XPath engine names elements by class
+            # (//android.widget.TextView) while WindowDump keeps the raw <node> tags, so the same
+            # expression must be evaluated by the same engine that find_widget uses.
+            deadline = time.monotonic() + timeout
+            while True:
+                try:
+                    return self.get_window_dump().find_widget(by, value)
+                except WidgetNotFoundError:
+                    if time.monotonic() >= deadline:
+                        break
+                    time.sleep(0.5)
+            appeared = False
+        elif by in selector_map:
+            appeared = bool(self._u2(**{selector_map[by]: value}).wait(timeout=timeout))
+        else:
             raise ValueError(f"Unsupported By strategy: {by}")
 
-        selector = self._u2(**selector_map[by])
-        if selector.wait(timeout=timeout):
+        if appeared:
             return self.get_window_dump().find_widget(by, value)
         raise DeviceTimeoutError(f"Timeout after {timeout}s waiting for {by.name}={value}")
 
     # ── Activity Wait ────────────────────────────────────────────────
 
     def await_for_activity(self, activity: str, timeout: int = 10) -> bool:
-        start = datetime.now()
-        while (datetime.now() - start).seconds < timeout:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
             if activity in self.adb.shell("dumpsys activity activities"):
                 return True
             time.sleep(1)
@@ -291,65 +322,82 @@ class Device:
 
     # ── Media Capture ────────────────────────────────────────────────
 
-    def _media_paths(self, name: str, ext: str, subfolder: str) -> tuple[Path, str]:
+    def _media_name(self, name: str, ext: str) -> str:
         if not name:
             name = self.get_activity() or datetime.now().strftime("%Y%m%d_%H%M%S")
-        return self.result_path / subfolder, f"{name}.{ext}"
+            name = name.replace("/", "_")
+        return f"{name}.{ext}"
 
-    def screenshot(self, name: str, pull_to_results: bool = False) -> str:
-        result_dir, file_name = self._media_paths(name, "png", "Screenshots")
-        device_dir = "/sdcard/DCIM/Geppetto"
-        device_path = f"{device_dir}/{file_name}"
-        self.adb.shell(f"mkdir -p {device_dir}")
+    def screenshot(self, name: str = "", pull_to_results: bool = False) -> str:
+        """Capture the screen. Returns the device path, or the local path when pulled
+        (saved under ``<result_path>/Images/Screenshots``). Without *name*, the current
+        activity (or a timestamp) names the file."""
+        file_name = self._media_name(name, "png")
 
         if pull_to_results:
-            os.makedirs(result_dir, exist_ok=True)
-            local_path = result_dir / file_name
-            with open(local_path, "wb") as f:
-                subprocess.run(
-                    ["adb", "-s", self._serial, "exec-out", "screencap", "-p"],
-                    stdout=f,
-                    check=True,
-                )
+            local_path = self.result_path / self.SCREENSHOTS_DIR / file_name
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_bytes(self.adb.exec_out("screencap -p"))
             return str(local_path)
 
-        self.adb.shell(f"screencap -p {device_path}")
+        device_path = f"{self.DEVICE_MEDIA_DIR}/{file_name}"
+        self.adb.mkdir(self.DEVICE_MEDIA_DIR)
+        self.adb.shell(["screencap", "-p", device_path])
         return device_path
 
     async def record_screen(
         self,
-        name: str,
+        name: str = "",
         duration: int = 180,
         pull_to_results: bool = False,
     ) -> str:
-        result_dir, file_name = self._media_paths(name, "mp4", "Screenrecords")
-        device_dir = "/sdcard/DCIM/Geppetto"
-        device_path = f"{device_dir}/{file_name}"
-        self.adb.shell(f"mkdir -p {device_dir}")
+        """Record the screen for *duration* seconds (Android caps it at 180). Returns the
+        device path, or the local path under ``<result_path>/Videos/Screenrecords``."""
+        file_name = self._media_name(name, "mp4")
+        device_path = f"{self.DEVICE_MEDIA_DIR}/{file_name}"
+        self.adb.mkdir(self.DEVICE_MEDIA_DIR)
+        await self.adb.async_shell(["screenrecord", "--time-limit", duration, device_path])
 
         if pull_to_results:
-            os.makedirs(result_dir, exist_ok=True)
-            await self.adb.async_shell(f"screenrecord --time-limit {duration} {device_path}")
-            self.adb.pull(device_path, str(result_dir / file_name))
+            local_dir = self.result_path / self.SCREENRECORDS_DIR
+            local_dir.mkdir(parents=True, exist_ok=True)
+            local_path = self.adb.pull(device_path, local_dir)
             self.adb.rm(device_path)
-            return str(result_dir / file_name)
-
-        await self.adb.async_shell(f"screenrecord --time-limit {duration} {device_path}")
+            return local_path
         return device_path
+
+    # ── Logcat ───────────────────────────────────────────────────────
+
+    def clear_logcat(self) -> None:
+        """Empty the device log buffers (``logcat -c``)."""
+        self.adb.shell("logcat -c")
+
+    def dump_logcat(self, *, fmt: str = "threadtime") -> str:
+        """Everything in the log buffers right now (``logcat -d``), in format *fmt*."""
+        return self.adb.shell(["logcat", "-d", "-v", fmt])
+
+    def start_recording(self, name: str = "", time_limit: int = 180) -> ScreenRecording:
+        """Start recording the screen in the background; finish it with
+        ``stop(save_to)`` or ``discard()``. Android caps recordings at 180 s."""
+        return ScreenRecording(self.adb, self._media_name(name, "mp4")[:-4], time_limit).start()
 
     # ── Phone & Bluetooth ────────────────────────────────────────────
 
     def make_call(self, number: str) -> str:
         self.logger.info("Making call to: %s", number)
-        return self.adb.shell(f"am start -a android.intent.action.CALL -d tel:{number}")
+        return self.adb.shell(
+            ["am", "start", "-a", "android.intent.action.CALL", "-d", f"tel:{number}"]
+        )
 
     def bluetooth_manager(self, action: BluetoothAction) -> str:
-        return self.adb.shell(f"cmd bluetooth_manager {action.value}")
+        return self.adb.shell(["cmd", "bluetooth_manager", action.value])
 
     # ── Filesystem ───────────────────────────────────────────────────
 
     def list_directories(self, path: str, real_path: bool = False) -> list[str]:
-        ls = self.adb.shell(f"ls {path}")
+        """Entries (files and folders) in *path* on the device; with *real_path*, as
+        full paths."""
+        ls = self.adb.shell(["ls", path])
         lines = ls.splitlines()
         if real_path:
             return [f"{path}/{p}" for p in lines]
@@ -357,12 +405,25 @@ class Device:
 
     # ── Device Lifecycle ─────────────────────────────────────────────
 
-    def reboot(self, option: str | None = None) -> None:
+    def reboot(self, option: str | None = None, timeout: int = 180) -> None:
+        """Reboot and wait until Android reports ``sys.boot_completed=1``.
+
+        Raises:
+            DeviceTimeoutError: When the boot does not complete within *timeout* seconds.
+        """
         try:
-            self.adb.shell(f"reboot {option}" if option else "reboot")
+            self.adb.shell(["reboot", option] if option else "reboot")
         except subprocess.CalledProcessError:
             pass  # Expected — device disconnects
         self.logger.info("Rebooting device…")
         self.adb.wait_for_device()
-        time.sleep(10)
+        self.wait_for_boot(timeout)
         self.logger.info("Device rebooted")
+
+    def wait_for_boot(self, timeout: int = 180) -> None:
+        """Block until ``sys.boot_completed`` is ``1``.
+
+        Raises:
+            DeviceTimeoutError: When it does not happen within *timeout* seconds.
+        """
+        wait_for_boot(self.adb, timeout)

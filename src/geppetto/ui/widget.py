@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -11,7 +12,11 @@ if TYPE_CHECKING:
     from .children import Children
 
 
-@dataclass
+def _flag(attrs: Mapping[str, str], name: str) -> bool:
+    return attrs.get(name, "false").lower() == "true"
+
+
+@dataclass(eq=False)
 class Widget:
     """Represents a single Android UI element extracted from a window hierarchy dump."""
 
@@ -34,11 +39,18 @@ class Widget:
     bounds: Bounds | None = None
     drawing_order: str = ""
     children: Children | None = field(default=None, repr=False)
+    #: The XML node this widget came from (``None`` when built from a dict).
+    node: etree._Element | None = field(default=None, repr=False)
 
     # ── Factory Methods ──────────────────────────────────────────────
 
     @classmethod
-    def from_dict(cls, data: dict[str, str]) -> Widget:
+    def from_dict(cls, data: Mapping[str, str]) -> Widget:
+        """Build from the attributes of a hierarchy ``<node>`` (``resource-id``, ``bounds``…).
+
+        A missing or empty ``bounds`` gives ``bounds=None`` instead of an error.
+        """
+        bounds = data.get("bounds") or None
         return cls(
             index=data.get("index", ""),
             text=data.get("text", ""),
@@ -46,42 +58,25 @@ class Widget:
             class_name=data.get("class", ""),
             package=data.get("package", ""),
             content_desc=data.get("content-desc", ""),
-            checkable=data.get("checkable", "false").lower() == "true",
-            checked=data.get("checked", "false").lower() == "true",
-            clickable=data.get("clickable", "false").lower() == "true",
-            enabled=data.get("enabled", "false").lower() == "true",
-            focusable=data.get("focusable", "false").lower() == "true",
-            focused=data.get("focused", "false").lower() == "true",
-            scrollable=data.get("scrollable", "false").lower() == "true",
-            long_clickable=data.get("long-clickable", "false").lower() == "true",
-            is_password=data.get("password", "false").lower() == "true",
-            selected=data.get("selected", "false").lower() == "true",
-            bounds=Bounds(data["bounds"]),
+            checkable=_flag(data, "checkable"),
+            checked=_flag(data, "checked"),
+            clickable=_flag(data, "clickable"),
+            enabled=_flag(data, "enabled"),
+            focusable=_flag(data, "focusable"),
+            focused=_flag(data, "focused"),
+            scrollable=_flag(data, "scrollable"),
+            long_clickable=_flag(data, "long-clickable"),
+            is_password=_flag(data, "password"),
+            selected=_flag(data, "selected"),
+            bounds=Bounds(bounds) if bounds else None,
             drawing_order=data.get("drawing-order", ""),
         )
 
     @classmethod
     def from_xml_node(cls, node: etree._Element) -> Widget:
-        return cls(
-            index=node.attrib.get("index", ""),
-            text=node.attrib.get("text", ""),
-            id=node.attrib.get("resource-id", ""),
-            class_name=node.attrib.get("class", ""),
-            package=node.attrib.get("package", ""),
-            content_desc=node.attrib.get("content-desc", ""),
-            checkable=node.attrib.get("checkable", "false").lower() == "true",
-            checked=node.attrib.get("checked", "false").lower() == "true",
-            clickable=node.attrib.get("clickable", "false").lower() == "true",
-            enabled=node.attrib.get("enabled", "false").lower() == "true",
-            focusable=node.attrib.get("focusable", "false").lower() == "true",
-            focused=node.attrib.get("focused", "false").lower() == "true",
-            scrollable=node.attrib.get("scrollable", "false").lower() == "true",
-            long_clickable=node.attrib.get("long-clickable", "false").lower() == "true",
-            is_password=node.attrib.get("password", "false").lower() == "true",
-            selected=node.attrib.get("selected", "false").lower() == "true",
-            bounds=Bounds(node.attrib["bounds"]),
-            drawing_order=node.attrib.get("drawing-order", ""),
-        )
+        widget = cls.from_dict(node.attrib)
+        widget.node = node
+        return widget
 
     # ── Dunder Methods ───────────────────────────────────────────────
 
@@ -96,3 +91,5 @@ class Widget:
             and self.content_desc == other.content_desc
             and self.bounds == other.bounds
         )
+
+    __hash__ = None  # type: ignore[assignment]  # mutable: equal widgets are not hash keys

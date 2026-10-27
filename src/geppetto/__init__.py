@@ -4,13 +4,21 @@ Just as Geppetto brought Pinocchio to life, this tool brings your
 Android tests to life through automation.
 """
 
-__version__ = "2.0.4"
+__version__ = "2.1.0"
 
 from typing import Any
 
 from ._logging import DeviceLogger
 from .device import Device
-from .exceptions import DeviceIsSecureError, DeviceTimeoutError, WidgetNotFoundError
+from .exceptions import (
+    AdbCommandError,
+    DeviceIsSecureError,
+    DeviceNotFoundError,
+    DeviceTimeoutError,
+    EmulatorError,
+    GeppettoError,
+    WidgetNotFoundError,
+)
 from .models.by import By
 from .models.common_classes import CommonClasses
 from .models.direction import Direction
@@ -57,7 +65,11 @@ __all__ = [
     "WifiSecurityType",
     "CommonClasses",
     # Exceptions
+    "GeppettoError",
+    "AdbCommandError",
+    "EmulatorError",
     "DeviceIsSecureError",
+    "DeviceNotFoundError",
     "DeviceTimeoutError",
     "WidgetNotFoundError",
     # Logging

@@ -20,16 +20,17 @@ class WifiService:
         wifi_security_type: WifiSecurityType,
         password: str = "",
     ) -> str:
-        # Hex-encode the SSID to prevent shell-escaping issues with special characters
-        hex_ssid = "".join(f"{ord(c):02x}" for c in ssid)
+        """Connect to *ssid*. The password is never logged."""
+        # `-x` takes the SSID hex-encoded (UTF-8), so any character in the name survives.
+        hex_ssid = ssid.encode("utf-8").hex()
 
-        if wifi_security_type in (WifiSecurityType.OPEN, WifiSecurityType.OWE):
-            cmd = f'cmd wifi connect-network "{hex_ssid}" {wifi_security_type.value} -x'
-        else:
-            cmd = f'cmd wifi connect-network "{hex_ssid}" {wifi_security_type.value} {password} -x'
+        args = ["cmd", "wifi", "connect-network", hex_ssid, wifi_security_type.value]
+        if wifi_security_type not in (WifiSecurityType.OPEN, WifiSecurityType.OWE):
+            args.append(password)  # quoted for the device shell: spaces and symbols are safe
+        args.append("-x")
 
         self._adb.logger.info("Connecting to WiFi SSID: %s Type: %s", ssid, wifi_security_type.name)
-        return self._adb.shell(cmd)
+        return self._adb.shell(args)
 
     def enable(self) -> None:
         self._adb.logger.info("Enabling WiFi")

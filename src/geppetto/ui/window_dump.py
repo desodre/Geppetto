@@ -33,14 +33,26 @@ class WindowDump:
         return [Widget.from_xml_node(node) for node in self.root.xpath(".//node")]
 
     def set_children(self, widget: Widget) -> list[Widget]:
-        xpath = (
-            f".//node[@index='{widget.index}' and @text='{widget.text}' "
-            f"and @resource-id='{widget.id}' and @class='{widget.class_name}']"
+        """Fill ``widget.children`` with its direct children and return them.
+
+        Uses the XML node the widget came from; a widget built elsewhere is located by
+        its attributes (values passed as XPath variables, so quotes in the text are safe).
+        """
+        node = widget.node
+        if node is None or node.getroottree().getroot() is not self.root:
+            matches = self.root.xpath(
+                ".//node[@index=$index and @text=$text and @resource-id=$rid and @class=$cls]",
+                index=widget.index,
+                text=widget.text,
+                rid=widget.id,
+                cls=widget.class_name,
+            )
+            node = matches[0] if matches else None
+        children = (
+            [Widget.from_xml_node(child) for child in node.findall("node")]
+            if node is not None
+            else []
         )
-        parent_nodes = self.root.xpath(xpath)
-        children: list[Widget] = []
-        if parent_nodes:
-            children = [Widget.from_xml_node(child) for child in parent_nodes[0].findall("node")]
         widget.children = Children(children)
         return children
 
@@ -49,11 +61,22 @@ class WindowDump:
 
         Raises:
             WidgetNotFoundError: If no matching widget is found.
+            ValueError: For ``By.WIDGET``, which is not a searchable attribute.
         """
         found: Widget | None = None
 
+        if by is By.WIDGET:
+            raise ValueError(
+                "By.WIDGET is not a search strategy; use TEXT, ID, CLASS, CONTENT_DESC or XPATH"
+            )
         if by is By.XPATH:
-            nodes = self.root.xpath(value)
+            result = self.root.xpath(value)
+            # An expression like `count(//node)` returns a number, not elements.
+            nodes = (
+                [n for n in result if isinstance(n, etree._Element)]
+                if isinstance(result, list)
+                else []
+            )
             if nodes:
                 found = Widget.from_xml_node(nodes[0])
         else:

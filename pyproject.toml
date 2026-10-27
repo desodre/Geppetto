@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "geppetto-android"
-version = "2.0.4"
+dynamic = ["version"]
 description = "Android UI Automation Framework — like Geppetto brought Pinocchio to life, this tool brings your tests to life."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
@@ -27,14 +27,13 @@ classifiers = [
 ]
 
 dependencies = [
-    "adbutils>=2.9.3",
     "lxml>=6.0.0",
-    "pillow>=11.0.0",
     "uiautomator2>=3.3.3",
 ]
 
 [project.optional-dependencies]
 analyzers = [
+    "pillow>=11.0.0",
     "opencv-python>=4.9.0",
     "imagehash>=4.3.1",
     "extcolors>=1.0.0",
@@ -45,7 +44,14 @@ hardware = [
     "brainstem>=2.9.0",
 ]
 
+# QR pairing in `geppetto pair --qr`
+cli = [
+    "qrcode>=8.0",
+]
+
 all = [
+    "qrcode>=8.0",
+    "pillow>=11.0.0",
     "opencv-python>=4.9.0",
     "imagehash>=4.3.1",
     "extcolors>=1.0.0",
@@ -53,11 +59,20 @@ all = [
     "brainstem>=2.9.0",
 ]
 
+[project.scripts]
+geppetto = "geppetto.cli:main"
+
+[project.entry-points.pytest11]
+geppetto = "geppetto.pytest_plugin"
+
 [project.urls]
 Homepage = "https://github.com/desodre/geppetto"
 Repository = "https://github.com/desodre/geppetto"
 Issues = "https://github.com/desodre/geppetto/issues"
 Documentation = "https://github.com/desodre/geppetto#readme"
+
+[tool.hatch.version]
+path = "src/geppetto/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/geppetto"]
@@ -66,6 +81,7 @@ packages = ["src/geppetto"]
 dev = [
     "mypy>=1.20.2",
     "pytest>=9.0.3",
+    "pytest-html>=4.1.1",
     "ruff>=0.15.12",
 ]
 
@@ -76,6 +92,13 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "B"]
 ignore = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+# This suite tests the library with a fake adb: the plugin's own capture stays off here
+# (tests/test_pytest_plugin.py exercises it in pytester runs, which have their own ini).
+geppetto_artifacts = "never"
 
 [tool.mypy]
 python_version = "3.12"
@@ -91,6 +114,7 @@ module = [
     "imagehash.*",
     "extcolors.*",
     "numpy.*",
+    "cv2.*",
     "brainstem.*",
 ]
 ignore_missing_imports = true
