@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 
 from .._logging import DeviceLogger
 
@@ -9,7 +10,7 @@ try:
 except ImportError as _exc:  # pragma: no cover
     raise ImportError(
         "Video analysis dependencies are missing. "
-        "Install them with: pip install geppetto[analyzers]"
+        "Install them with: pip install 'geppetto-android[analyzers]'"
     ) from _exc
 
 
@@ -51,7 +52,7 @@ class VideoAnalyzer:
         cap.release()
         return saved_paths
 
-    def yield_frames(self, frame_interval: int = 1):
+    def yield_frames(self, frame_interval: int = 1) -> Iterator[PILImage]:
         """Yield every *frame_interval*-th frame as a PIL Image."""
         cap = cv2.VideoCapture(self.video_path)
         if not cap.isOpened():
