@@ -10,6 +10,17 @@
   port). Standard library only.
 - `geppetto.inspector`: `recommend()`/`Selector`, `xpath_literal()`, `Recorder`, `InspectorServer`,
   `hierarchy_json()`.
+- **Logcat streaming** (`Device.logcat()`, `LogcatStream`, `LogLine`): live from the device's current
+  time, filters by package/tag/level/regex, ring buffer, `expect()` / `expect_no()`
+  (`LogNotFoundError`).
+- **Crash detection** (`Device.watch_crashes()`, `CrashWatcher`, `Crash`): Java exceptions, ANRs and
+  native signals with stack/backtrace/tombstone; `AppCrashedError`. pytest: `--geppetto-watch`,
+  ini `geppetto_watch`, marker `geppetto_watch(...)` fail a test when a watched app crashes and add
+  `crash.txt` to the artifacts.
+
+### Fixed
+- Inspector: clickable rows without attributes of their own (the usual Android list item) get a
+  stable selector through their label instead of a fragile position.
 
 ## 2.1.0
 

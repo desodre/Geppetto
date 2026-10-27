@@ -87,6 +87,8 @@ Every exception derives from `GeppettoError`:
 | `DeviceIsSecureError` | `adb root` refused on a secure build |
 | `AdbCommandError` | a host-side adb command failed (message has adb's output) |
 | `EmulatorError` | emulator missing, unknown AVD, or the emulator exited while starting |
+| `LogNotFoundError` | `expect()` timed out, or `expect_no()` saw the line |
+| `AppCrashedError` | a watched app crashed, ANR'd or died by a native signal |
 
 ### Logging
 
@@ -128,6 +130,27 @@ The folder is printed in the failure report and written as a JUnit property
 in `[tool.pytest.ini_options]`). Without a device, tests that need one are skipped with the reason.
 Override the `geppetto_device_factory` fixture in `conftest.py` to customise how each `Device` is
 created. A runnable example lives in [`examples/pytest`](examples/pytest).
+
+## Logcat and crash detection
+
+```python
+with device.logcat(package="com.example", level="I") as log:    # from now on, nothing cleared
+    device.click(device.await_widget(By.ID, "com.example:id/pay"))
+    log.expect(r"Payment OK", timeout=10)                       # waits for a new matching line
+    log.expect_no("Exception", within=2)                        # fails if one shows up
+
+with device.watch_crashes("com.example"):                       # AppCrashedError at the end of
+    device.click(...)                                            # the block, with the stack trace
+```
+
+Filters: `package` (follows the app across restarts), `tags`, minimum `level` (`V D I W E F`)
+and a `pattern` regex. Crashes detected: Java (`FATAL EXCEPTION` + stack), ANR (`ANR in …` +
+reason) and native signals (`Fatal signal …` + backtrace and tombstone path).
+
+In pytest, `--geppetto-watch com.example` (or `geppetto_watch` in the ini, or
+`@pytest.mark.geppetto_watch("com.example")`) fails a device test when that app crashes during it,
+even if its assertions passed, and saves `crash.txt` with the artifacts. Only the packages you name
+are watched, so an unrelated system ANR on a slow emulator does not fail your tests.
 
 ## Command line
 

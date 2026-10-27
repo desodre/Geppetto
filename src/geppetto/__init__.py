@@ -9,16 +9,20 @@ __version__ = "2.1.0"
 from typing import Any
 
 from ._logging import DeviceLogger
+from .crashes import Crash, CrashWatcher
 from .device import Device
 from .exceptions import (
     AdbCommandError,
+    AppCrashedError,
     DeviceIsSecureError,
     DeviceNotFoundError,
     DeviceTimeoutError,
     EmulatorError,
     GeppettoError,
+    LogNotFoundError,
     WidgetNotFoundError,
 )
+from .logcat import LogcatStream, LogLine
 from .models.by import By
 from .models.common_classes import CommonClasses
 from .models.direction import Direction
@@ -68,6 +72,13 @@ __all__ = [
     "GeppettoError",
     "AdbCommandError",
     "EmulatorError",
+    "AppCrashedError",
+    "LogNotFoundError",
+    # Logcat
+    "LogcatStream",
+    "LogLine",
+    "CrashWatcher",
+    "Crash",
     "DeviceIsSecureError",
     "DeviceNotFoundError",
     "DeviceTimeoutError",

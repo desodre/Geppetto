@@ -53,6 +53,31 @@ class FakeAdb:
         CALLS.append(["rm", path])
 
 
+LOGCAT = ""  # what the fake device's logcat prints while a test runs
+
+
+class FakeStream:
+    def __init__(self):
+        self.stdout = iter(LOGCAT.splitlines(keepends=True))
+        self._done = False
+
+    def poll(self):
+        return 0 if self._done else None
+
+    def terminate(self):
+        self._done = True
+
+    def wait(self, timeout=None):
+        return 0
+
+
+def _stream_shell(self, command):
+    return FakeStream()
+
+
+FakeAdb.stream_shell = _stream_shell
+
+
 class FakeU2:
     def dump_hierarchy(self):
         return "<hierarchy><node text='Login' bounds='[0,0][1,1]'/></hierarchy>"
@@ -306,3 +331,52 @@ def test_expected_failures_keep_their_artifacts(pytester, sem_aparelhos):
         for p in ET.parse(pytester.path / "junit.xml").iter("property")
     }
     assert (pathlib.Path(props["geppetto_artifacts[S1]"]) / "screenshot.png").exists()
+
+
+CRASH = (
+    "10-27 21:10:02.200  4321  4321 E AndroidRuntime: FATAL EXCEPTION: main\n"
+    "10-27 21:10:02.201  4321  4321 E AndroidRuntime: Process: com.example.app, PID: 4321\n"
+    "10-27 21:10:02.202  4321  4321 E AndroidRuntime: java.lang.IllegalStateException: boom\n"
+)
+
+
+def test_a_watched_crash_fails_a_passing_test(pytester, sem_aparelhos):
+    pytester.makeconftest(CONFTEST + f"\nLOGCAT = {CRASH!r}\n")
+    pytester.makepyfile(
+        """
+        def test_passa_mas_o_app_caiu(device):
+            pass
+        """
+    )
+    result = pytester.runpytest("--serial", "S1", "--geppetto-watch", "com.example.app")
+    result.assert_outcomes(failed=1)
+    result.stdout.fnmatch_lines(["*App crashed during the test*", "*IllegalStateException: boom*"])
+
+
+def test_crash_txt_joins_the_artifacts_and_the_marker_works(pytester, sem_aparelhos):
+    import pathlib
+    import xml.etree.ElementTree as ET
+
+    pytester.makeconftest(CONFTEST + f"\nLOGCAT = {CRASH!r}\n")
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.geppetto_watch("com.example.app")
+        def test_com_marcador(device):
+            pass
+        """
+    )
+    pytester.runpytest("--serial", "S1", "--junitxml=junit.xml").assert_outcomes(failed=1)
+    props = {
+        p.get("name"): p.get("value")
+        for p in ET.parse(pytester.path / "junit.xml").iter("property")
+    }
+    crash = pathlib.Path(props["geppetto_artifacts[S1]"]) / "crash.txt"
+    assert "IllegalStateException: boom" in crash.read_text()
+
+
+def test_crash_of_another_app_is_ignored(pytester, sem_aparelhos):
+    pytester.makeconftest(CONFTEST + f"\nLOGCAT = {CRASH!r}\n")
+    pytester.makepyfile("def test_ok(device): pass")
+    pytester.runpytest("--serial", "S1", "--geppetto-watch", "com.other").assert_outcomes(passed=1)

@@ -28,6 +28,9 @@ src/geppetto/
   __init__.py        public API, __version__ (single source), lazy optional imports
   device.py          Device: the facade users touch. Composes everything below.
   recording.py       ScreenRecording: background screenrecord (start / stop(save_to) / discard)
+  logcat.py          LogcatStream: `logcat -T <device time>` read in a thread (never `logcat -c`),
+                     filters, ring buffer, expect()/expect_no(), settle()
+  crashes.py         CrashWatcher: Java/ANR/native crash parsing from every logcat line
   pytest_plugin.py   pytest11 entry point: options, device fixtures, failure artifacts, reports
   exceptions.py      GeppettoError and its subclasses (every error we raise)
   _logging.py        "geppetto.*" logger hierarchy + DeviceLogger (opt-in handlers)
@@ -138,6 +141,10 @@ If the machine has no Python 3.12, `UV_PYTHON=3.14 uv sync --group dev` works lo
 
 ## Gotchas
 
+- **Crash watching is opt-in per package** (`--geppetto-watch`): CI emulators produce unrelated
+  system ANRs; watching every app would make tests flaky.
+- **Logcat lines arrive asynchronously**: call `LogcatStream.settle()` before deciding there was no
+  line/crash (the plugin and `CrashWatcher.crashes()` do).
 - **`adb shell` re-parses on the device** (see rule 1). `adb exec-out` has the same behaviour.
 - **Recommended selectors must be unique in the dump**: `By.ID/TEXT/CONTENT_DESC` return the first
   match, so a shared value would record a tap on another element. `tests/test_inspector.py` checks

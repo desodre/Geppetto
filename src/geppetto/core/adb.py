@@ -95,6 +95,21 @@ class AdbClient:
             self._shell_args(command), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
         )
 
+    def stream_shell(self, command: Command) -> subprocess.Popen[str]:
+        """Start ``adb shell <command>`` with its stdout readable line by line (e.g. ``logcat``).
+
+        The caller owns the process: ``terminate()`` and ``wait()`` it when done.
+        """
+        return subprocess.Popen(
+            self._shell_args(command),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+
     def exec_out(self, command: Command) -> bytes:
         """Run ``adb exec-out <command>`` and return the raw bytes (e.g. ``screencap -p``)."""
         full = ["adb", "-s", self.serial, "exec-out", device_command(command)]

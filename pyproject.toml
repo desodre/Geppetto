@@ -96,6 +96,7 @@ ignore = []
 [tool.ruff.lint.per-file-ignores]
 # Inline UI dumps: an Android <node> line is long and must stay as the device writes it.
 "tests/test_inspector.py" = ["E501"]
+"tests/test_logcat.py" = ["E501"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
