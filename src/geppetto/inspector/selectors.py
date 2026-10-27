@@ -6,8 +6,10 @@ Order of preference, each one only if it matches **exactly one** node in the dum
 2. ``content-desc``           → ``By.CONTENT_DESC``
 3. ``text``                   → ``By.TEXT``
 4. ``resource-id`` + ``text`` → XPath (lists where every row shares the id)
-5. relative to the closest ancestor with a unique ``resource-id`` → XPath
-6. position among nodes of the same class → indexed XPath (last resort, flagged ``fragile``)
+5. a container by the unique text/content-desc of a descendant → XPath (the usual Android row:
+   a clickable LinearLayout with no attributes of its own and the label in a child TextView)
+6. relative to the closest ancestor with a unique ``resource-id`` → XPath
+7. position among nodes of the same class → indexed XPath (last resort, flagged ``fragile``)
 
 ``By.ID``/``TEXT``/``CONTENT_DESC`` match the first node with that value, so a non-unique value
 would silently point at another element: uniqueness is what makes a selector safe to record.
@@ -73,6 +75,10 @@ def recommend(root: etree._Element, node: etree._Element) -> Selector:
         if _count(root, xpath) == 1:
             return Selector(By.XPATH, xpath)
 
+    por_descendente = _by_descendant(root, node)
+    if por_descendente is not None:
+        return por_descendente
+
     proprio = _own_xpath(node)
     for ancestral in node.iterancestors("node"):
         arid = ancestral.get("resource-id", "")
@@ -99,3 +105,21 @@ def _own_xpath(node: etree._Element) -> str:
         if attrs:
             return _attr_xpath(attrs)
     return "//node"
+
+
+def _by_descendant(root: etree._Element, node: etree._Element) -> Selector | None:
+    """``//node[<own class/clickable> and .//node[@text=...]]`` matching only *node*."""
+    proprio = {"class": node.get("class", "")}
+    if node.get("clickable") == "true":
+        proprio["clickable"] = "true"
+    condicoes = " and ".join(f"@{k}={xpath_literal(v)}" for k, v in proprio.items() if v)
+    for filho in node.iterdescendants("node"):
+        for attr in ("text", "content-desc"):
+            valor = filho.get(attr, "")
+            if not valor:
+                continue
+            interno = f".//node[@{attr}={xpath_literal(valor)}]"
+            xpath = f"//node[{condicoes} and {interno}]" if condicoes else f"//node[{interno}]"
+            if _count(root, xpath) == 1:
+                return Selector(By.XPATH, xpath)
+    return None

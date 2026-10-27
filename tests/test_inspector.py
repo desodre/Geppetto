@@ -23,6 +23,12 @@ LISTA = """<hierarchy>
   <node index="2" class="android.widget.Button" text="OK" bounds="[0,1900][540,2000]"/>
   <node index="3" class="android.widget.Button" text="OK" bounds="[540,1900][1080,2000]"/>
   <node index="4" class="android.view.View" bounds="[0,0][1,1]"/>
+  <node index="6" class="android.widget.LinearLayout" clickable="true" bounds="[0,1700][1080,1800]">
+    <node index="0" class="android.widget.TextView" text="Network &amp; internet" bounds="[40,1710][900,1790]"/>
+  </node>
+  <node index="7" class="android.widget.LinearLayout" clickable="true" bounds="[0,1600][1080,1700]">
+    <node index="0" class="android.widget.TextView" text="Connected devices" bounds="[40,1610][900,1690]"/>
+  </node>
   <node index="5" class="android.widget.TextView" resource-id="com.app:id/footer" text="Don't &quot;disturb&quot;" bounds="[0,1800][1080,1900]"/>
 </node>
 </hierarchy>"""
@@ -53,6 +59,18 @@ def test_shared_id_and_repeated_text_use_both(root):
     assert selector == Selector(
         By.XPATH, "//node[@resource-id='com.app:id/row' and @text='Settings']"
     )
+
+
+def test_clickable_row_is_found_by_its_label(root):
+    """The usual Android row: a clickable container without attributes, the text in a child."""
+    linha = root.xpath("//node[@clickable='true' and .//node[@text='Network & internet']]")[0]
+    selector = recommend(root, linha)
+    assert not selector.fragile
+    assert selector.value == (
+        "//node[@class='android.widget.LinearLayout' and @clickable='true' "
+        "and .//node[@text='Network & internet']]"
+    )
+    assert root.xpath(selector.value) == [linha]
 
 
 def test_content_desc(root):
