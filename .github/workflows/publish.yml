@@ -6,8 +6,13 @@ on:
       - "v*"
 
 jobs:
+  checks:
+    name: CI checks
+    uses: ./.github/workflows/ci.yml
+
   build:
     name: Build distribution
+    needs: checks
     runs-on: ubuntu-latest
 
     steps:
@@ -23,6 +28,14 @@ jobs:
 
       - name: Build package
         run: uv build
+
+      - name: Tag matches the package version
+        run: |
+          versao=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' src/geppetto/__init__.py)
+          if [ "v$versao" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match the package version $versao"
+            exit 1
+          fi
 
       - name: Upload distribution artifacts
         uses: actions/upload-artifact@v4
