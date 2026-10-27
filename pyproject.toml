@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "geppetto-android"
-version = "2.0.4"
+dynamic = ["version"]
 description = "Android UI Automation Framework — like Geppetto brought Pinocchio to life, this tool brings your tests to life."
 readme = { file = "README.md", content-type = "text/markdown" }
 requires-python = ">=3.12"
@@ -27,14 +27,13 @@ classifiers = [
 ]
 
 dependencies = [
-    "adbutils>=2.9.3",
     "lxml>=6.0.0",
-    "pillow>=11.0.0",
     "uiautomator2>=3.3.3",
 ]
 
 [project.optional-dependencies]
 analyzers = [
+    "pillow>=11.0.0",
     "opencv-python>=4.9.0",
     "imagehash>=4.3.1",
     "extcolors>=1.0.0",
@@ -46,6 +45,7 @@ hardware = [
 ]
 
 all = [
+    "pillow>=11.0.0",
     "opencv-python>=4.9.0",
     "imagehash>=4.3.1",
     "extcolors>=1.0.0",
@@ -58,6 +58,9 @@ Homepage = "https://github.com/desodre/geppetto"
 Repository = "https://github.com/desodre/geppetto"
 Issues = "https://github.com/desodre/geppetto/issues"
 Documentation = "https://github.com/desodre/geppetto#readme"
+
+[tool.hatch.version]
+path = "src/geppetto/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/geppetto"]
@@ -77,6 +80,10 @@ target-version = "py312"
 select = ["E", "F", "I", "N", "W", "B"]
 ignore = []
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -91,6 +98,7 @@ module = [
     "imagehash.*",
     "extcolors.*",
     "numpy.*",
+    "cv2.*",
     "brainstem.*",
 ]
 ignore_missing_imports = true
