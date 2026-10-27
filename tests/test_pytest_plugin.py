@@ -282,3 +282,27 @@ def test_pytest_html_embeds_the_screenshot_and_links_the_rest(pytester, sem_apar
     html = (pytester.path / "report.html").read_text()
     assert "UE5HLUJZVEVT" in html  # base64 of b"PNG-BYTES": the screenshot is inside the report
     assert "S1 logcat.txt" in html and "S1 window_dump.xml" in html
+
+
+def test_expected_failures_keep_their_artifacts(pytester, sem_aparelhos):
+    pytester.makeconftest(CONFTEST)
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.xfail(strict=True)
+        def test_xfail(device):
+            assert False
+        """
+    )
+    import pathlib
+    import xml.etree.ElementTree as ET
+
+    result = pytester.runpytest("--serial", "S1", "--junitxml=junit.xml")
+    result.assert_outcomes(xfailed=1)
+    # pytest prints report sections only for failures: the JUnit property shows the folder.
+    props = {
+        p.get("name"): p.get("value")
+        for p in ET.parse(pytester.path / "junit.xml").iter("property")
+    }
+    assert (pathlib.Path(props["geppetto_artifacts[S1]"]) / "screenshot.png").exists()

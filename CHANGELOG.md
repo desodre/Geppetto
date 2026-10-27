@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- **pytest plugin** (registered automatically): `device`/`devices` fixtures, `--serial`
+  (repeatable, or `GEPPETTO_SERIAL`), `--all-devices`, `--geppetto-output`,
+  `--geppetto-artifacts on-failure|always|never`, `--geppetto-record`; tests without a device are
+  skipped with the reason; `geppetto_device_factory` customises creation.
+- Failure artifacts for device tests (failures and `xfail`): `screenshot.png`, `window_dump.xml`,
+  `logcat.txt` (cleared before each test) and `screenrecord.mp4`, under
+  `<result folder>/Tests/<test id>/`; listed in the failure report, as a JUnit property and in
+  pytest-html (screenshot embedded).
+- `Device.clear_logcat()`, `Device.dump_logcat()`, `Device.start_recording()` and
+  `geppetto.recording.ScreenRecording`; `core.adb.list_devices()`, `AdbClient.spawn_shell()`.
+- `examples/pytest`: runnable example with the Settings app.
+
 ## 2.1.0
 
 ### Fixed

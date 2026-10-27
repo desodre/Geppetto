@@ -262,7 +262,9 @@ def pytest_runtest_makereport(
     if _CAPTURES not in item.stash or report.when == "teardown":
         return report
     mode = _artifacts_mode(item.config)
-    if report.failed or (mode == "always" and report.when == "call"):
+    # An expected failure (xfail) also failed on the device: its artifacts are as useful.
+    falhou = report.failed or (report.when == "call" and hasattr(report, "wasxfail"))
+    if falhou or (mode == "always" and report.when == "call"):
         _collect(item)
         for capture in item.stash[_CAPTURES]:
             if capture.folder is not None:

@@ -1,0 +1,5 @@
+[tool.pytest.ini_options]
+# Same as --geppetto-output / --geppetto-artifacts on the command line.
+geppetto_output = "results"
+geppetto_artifacts = "on-failure"
+addopts = "-ra"

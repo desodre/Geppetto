@@ -90,9 +90,44 @@ own logging configuration (or pytest's `caplog`) receives every record. `Device`
 the console and writes `Logs/device.log`/`Logs/adb.log` in its result folder; turn that off with
 `Device(serial, log_to_console=False, log_to_file=False)`.
 
+## pytest plugin
+
+Installing Geppetto registers a pytest plugin. Ask for the `device` (or `devices`) fixture:
+
+```python
+def test_settings_opens(device):
+    device.open_app("com.android.settings")
+    assert device.await_for_activity("com.android.settings")
+```
+
+```bash
+pytest                                   # the only connected device is picked
+pytest --serial emulator-5554            # repeat --serial for several (or GEPPETTO_SERIAL=a,b)
+pytest --all-devices                     # every device adb reports as ready
+pytest --geppetto-record --html=report.html --self-contained-html
+```
+
+When a device test fails (including `xfail`), Geppetto saves in
+`<output>/<run>_<serial>/Tests/<test id>/`:
+
+| File | What |
+|---|---|
+| `screenshot.png` | the screen at the failure (embedded in the pytest-html report) |
+| `window_dump.xml` | the UI hierarchy at the failure |
+| `logcat.txt` | the log produced by the test (logcat is cleared before each device test) |
+| `screenrecord.mp4` | the whole test, with `--geppetto-record` (Android caps it at 180 s) |
+
+The folder is printed in the failure report and written as a JUnit property
+`geppetto_artifacts[<serial>]`. Options: `--geppetto-output DIR`,
+`--geppetto-artifacts on-failure|always|never` (also as `geppetto_output` / `geppetto_artifacts`
+in `[tool.pytest.ini_options]`). Without a device, tests that need one are skipped with the reason.
+Override the `geppetto_device_factory` fixture in `conftest.py` to customise how each `Device` is
+created. A runnable example lives in [`examples/pytest`](examples/pytest).
+
 ## Main components
 
 - `Device`: primary facade and entry point.
+- `geppetto.pytest_plugin`: fixtures, CLI options and failure artifacts for pytest.
 - `geppetto.core`: ADB/Fastboot clients.
 - `geppetto.ui`: UI models (`WindowDump`, `Widget`, `Bounds`, `Children`).
 - `geppetto.services`: automation services (`wifi`, `lockscreen`, `notification`).

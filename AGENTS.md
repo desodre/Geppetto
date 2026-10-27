@@ -27,6 +27,8 @@ parent issue per theme, sub-issues for the work, each with a **Done when**.
 src/geppetto/
   __init__.py        public API, __version__ (single source), lazy optional imports
   device.py          Device: the facade users touch. Composes everything below.
+  recording.py       ScreenRecording: background screenrecord (start / stop(save_to) / discard)
+  pytest_plugin.py   pytest11 entry point: options, device fixtures, failure artifacts, reports
   exceptions.py      GeppettoError and its subclasses (every error we raise)
   _logging.py        "geppetto.*" logger hierarchy + DeviceLogger (opt-in handlers)
   core/              transport: AdbClient, FastbootClient. Only place that spawns processes.
@@ -52,8 +54,12 @@ analyzers, hardware: optional, imported lazily from geppetto/__init__.py
 - **`services/`** receive an `AdbClient`, never a `Device` (no cycles).
 - **`Device`** wires it together and owns the result folder (`<output>/<ts>_<serial>/`
   with `Images/Screenshots`, `Videos/Screenrecords`, `Logs`).
-- New big features get their own package (`pytest_plugin/`, `locator/`, `cli/`…) depending on
-  `Device`, never the other way round.
+- **`pytest_plugin.py`** loads on every pytest run where the package is installed: keep its import
+  cheap (`Device`/uiautomator2 are imported lazily) and never let an artifact failure change a test
+  outcome. Its own tests use `pytester` with a fake `Device` from `geppetto_device_factory`; this
+  repo's suite sets `geppetto_artifacts = "never"` so the capture does not touch the library tests.
+- New big features get their own module/package (`locator/`, `cli/`…) depending on `Device`,
+  never the other way round.
 
 ## Rules (obligations)
 
