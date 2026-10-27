@@ -27,6 +27,26 @@ def device_command(command: Command) -> str:
     return " ".join(shlex.quote(str(arg)) for arg in command)
 
 
+def list_devices() -> list[str]:
+    """Serials of the devices ``adb devices`` reports as ready (state ``device``).
+
+    Offline and unauthorized devices are left out. Raises :class:`DeviceNotFoundError` when the
+    ``adb`` binary is missing.
+    """
+    try:
+        output = subprocess.run(
+            ["adb", "devices"], capture_output=True, text=True, check=True
+        ).stdout
+    except FileNotFoundError as e:
+        raise DeviceNotFoundError("adb is not installed or not on PATH") from e
+    serials = []
+    for line in output.splitlines()[1:]:
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "device":
+            serials.append(parts[0])
+    return serials
+
+
 class AdbClient:
     """Low-level ADB transport layer.
 
@@ -64,6 +84,15 @@ class AdbClient:
         except subprocess.CalledProcessError as e:
             self.logger.error("ADB shell failed: %s\nStderr: %s", " ".join(full), e.stderr)
             raise
+
+    def spawn_shell(self, command: Command) -> subprocess.Popen[bytes]:
+        """Start ``adb shell <command>`` without waiting (e.g. ``screenrecord``, ``logcat``).
+
+        The caller owns the process: stop it on the device (``pkill``) and ``wait()`` for it.
+        """
+        return subprocess.Popen(
+            self._shell_args(command), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+        )
 
     def exec_out(self, command: Command) -> bytes:
         """Run ``adb exec-out <command>`` and return the raw bytes (e.g. ``screencap -p``)."""

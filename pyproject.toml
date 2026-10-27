@@ -53,6 +53,9 @@ all = [
     "brainstem>=2.9.0",
 ]
 
+[project.entry-points.pytest11]
+geppetto = "geppetto.pytest_plugin"
+
 [project.urls]
 Homepage = "https://github.com/desodre/geppetto"
 Repository = "https://github.com/desodre/geppetto"
