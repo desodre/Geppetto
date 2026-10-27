@@ -5,10 +5,11 @@ import logging
 import posixpath
 import shlex
 import subprocess
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
-from ..exceptions import DeviceIsSecureError, DeviceNotFoundError
+from ..exceptions import DeviceIsSecureError, DeviceNotFoundError, DeviceTimeoutError
 
 Command = str | Sequence[str | int | float]
 
@@ -160,3 +161,20 @@ class AdbClient:
     def wait_for_device(self) -> None:
         self.logger.info("Waiting for device…")
         self.cmd("wait-for-device")
+
+
+def wait_for_boot(adb: AdbClient, timeout: float = 180, interval: float = 2) -> None:
+    """Block until ``sys.boot_completed`` is ``1`` on *adb*'s device.
+
+    Raises:
+        DeviceTimeoutError: When it does not happen within *timeout* seconds.
+    """
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            if adb.shell("getprop sys.boot_completed").strip() == "1":
+                return
+        except subprocess.CalledProcessError:
+            pass  # adb is up but the shell is not ready yet
+        time.sleep(interval)
+    raise DeviceTimeoutError(f"Device {adb.serial} did not finish booting within {timeout}s")

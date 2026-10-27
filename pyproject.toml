@@ -44,7 +44,13 @@ hardware = [
     "brainstem>=2.9.0",
 ]
 
+# QR pairing in `geppetto pair --qr`
+cli = [
+    "qrcode>=8.0",
+]
+
 all = [
+    "qrcode>=8.0",
     "pillow>=11.0.0",
     "opencv-python>=4.9.0",
     "imagehash>=4.3.1",
@@ -52,6 +58,9 @@ all = [
     "numpy>=1.26.0",
     "brainstem>=2.9.0",
 ]
+
+[project.scripts]
+geppetto = "geppetto.cli:main"
 
 [project.entry-points.pytest11]
 geppetto = "geppetto.pytest_plugin"

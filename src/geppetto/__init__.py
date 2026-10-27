@@ -11,9 +11,11 @@ from typing import Any
 from ._logging import DeviceLogger
 from .device import Device
 from .exceptions import (
+    AdbCommandError,
     DeviceIsSecureError,
     DeviceNotFoundError,
     DeviceTimeoutError,
+    EmulatorError,
     GeppettoError,
     WidgetNotFoundError,
 )
@@ -64,6 +66,8 @@ __all__ = [
     "CommonClasses",
     # Exceptions
     "GeppettoError",
+    "AdbCommandError",
+    "EmulatorError",
     "DeviceIsSecureError",
     "DeviceNotFoundError",
     "DeviceTimeoutError",

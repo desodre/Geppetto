@@ -14,6 +14,12 @@
 - `Device.clear_logcat()`, `Device.dump_logcat()`, `Device.start_recording()` and
   `geppetto.recording.ScreenRecording`; `core.adb.list_devices()`, `AdbClient.spawn_shell()`.
 - `examples/pytest`: runnable example with the Settings app.
+- **`geppetto` command line**: `devices` (`--json`), `doctor` (each problem with its fix, exit 1 on
+  failures), `shot`, `record`, `emulator list|start|stop|snapshot`, `pair` (code or `--qr`),
+  `connect`, `disconnect`. New extra `[cli]` (`qrcode`) for QR pairing.
+- `geppetto.core.host` (devices -l, pair/connect, mDNS), `geppetto.core.emulator` (SDK lookup,
+  AVDs, start waiting for the boot, stop, snapshots), `geppetto.doctor`,
+  `core.adb.wait_for_boot`; exceptions `AdbCommandError` and `EmulatorError`.
 
 ## 2.1.0
 

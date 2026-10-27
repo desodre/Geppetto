@@ -10,7 +10,7 @@ from typing import cast
 from uiautomator2 import Device as U2Device
 
 from ._logging import DeviceLogger
-from .core.adb import AdbClient
+from .core.adb import AdbClient, wait_for_boot
 from .core.fastboot import FastbootClient
 from .exceptions import DeviceTimeoutError
 from .models.by import By
@@ -416,12 +416,4 @@ class Device:
         Raises:
             DeviceTimeoutError: When it does not happen within *timeout* seconds.
         """
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            try:
-                if self.adb.shell("getprop sys.boot_completed").strip() == "1":
-                    return
-            except subprocess.CalledProcessError:
-                pass  # adb is up but the shell is not ready yet
-            time.sleep(2)
-        raise DeviceTimeoutError(f"Device did not finish booting within {timeout}s")
+        wait_for_boot(self.adb, timeout)

@@ -243,6 +243,7 @@ all = [
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "pillow" },
+    { name = "qrcode" },
 ]
 analyzers = [
     { name = "extcolors" },
@@ -250,6 +251,9 @@ analyzers = [
     { name = "numpy" },
     { name = "opencv-python" },
     { name = "pillow" },
+]
+cli = [
+    { name = "qrcode" },
 ]
 hardware = [
     { name = "brainstem" },
@@ -278,9 +282,11 @@ requires-dist = [
     { name = "opencv-python", marker = "extra == 'analyzers'", specifier = ">=4.9.0" },
     { name = "pillow", marker = "extra == 'all'", specifier = ">=11.0.0" },
     { name = "pillow", marker = "extra == 'analyzers'", specifier = ">=11.0.0" },
+    { name = "qrcode", marker = "extra == 'all'", specifier = ">=8.0" },
+    { name = "qrcode", marker = "extra == 'cli'", specifier = ">=8.0" },
     { name = "uiautomator2", specifier = ">=3.3.3" },
 ]
-provides-extras = ["all", "analyzers", "hardware"]
+provides-extras = ["all", "analyzers", "cli", "hardware"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -924,6 +930,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/ca/5e/90b39adff710d698c00ba9c3125e2bec99dad7c5f1a3ba37c73a78a6689f/pywavelets-1.9.0-cp314-cp314t-musllinux_1_2_x86_64.whl", hash = "sha256:9950eb7c8b942e9bfa53d87c7e45a420dcddbd835c4c5f1aca045a3f775c6113", size = 4477378, upload-time = "2025-08-04T16:19:58.162Z" },
     { url = "https://files.pythonhosted.org/packages/f1/1a/89f5f4ebcb9d34d9b7b2ac0a868c8b6d8c78d699a36f54407a060cea0566/pywavelets-1.9.0-cp314-cp314t-win32.whl", hash = "sha256:097f157e07858a1eb370e0d9c1bd11185acdece5cca10756d6c3c7b35b52771a", size = 4209132, upload-time = "2025-08-04T16:20:00.371Z" },
     { url = "https://files.pythonhosted.org/packages/68/d2/a8065103f5e2e613b916489e6c85af6402a1ec64f346d1429e2d32cb8d03/pywavelets-1.9.0-cp314-cp314t-win_amd64.whl", hash = "sha256:3b6ff6ba4f625d8c955f68c2c39b0a913776d406ab31ee4057f34ad4019fb33b", size = 4306793, upload-time = "2025-08-04T16:20:02.934Z" },
+]
+
+[[package]]
+name = "qrcode"
+version = "8.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/8f/b2/7fc2931bfae0af02d5f53b174e9cf701adbb35f39d69c2af63d4a39f81a9/qrcode-8.2.tar.gz", hash = "sha256:35c3f2a4172b33136ab9f6b3ef1c00260dd2f66f858f24d88418a015f446506c", size = 43317, upload-time = "2025-05-01T15:44:24.726Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/dd/b8/d2d6d731733f51684bbf76bf34dab3b70a9148e8f2cef2bb544fccec681a/qrcode-8.2-py3-none-any.whl", hash = "sha256:16e64e0716c14960108e85d853062c9e8bba5ca8252c0b4d0231b9df4060ff4f", size = 45986, upload-time = "2025-05-01T15:44:22.781Z" },
 ]
 
 [[package]]

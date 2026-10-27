@@ -71,7 +71,7 @@ def test_wait_for_boot_returns_when_boot_completed(device, adb_run):
 
 
 def test_wait_for_boot_times_out(device, adb_run, monkeypatch):
-    monkeypatch.setattr("geppetto.device.time.sleep", lambda s: None)
+    monkeypatch.setattr("geppetto.core.adb.time.sleep", lambda s: None)
     adb_run.responder = lambda argv: "0\n"
     with pytest.raises(DeviceTimeoutError):
         device.wait_for_boot(timeout=0)
