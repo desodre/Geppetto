@@ -32,12 +32,18 @@ src/geppetto/
   exceptions.py      GeppettoError and its subclasses (every error we raise)
   _logging.py        "geppetto.*" logger hierarchy + DeviceLogger (opt-in handlers)
   core/              transport: AdbClient, FastbootClient. Only place that spawns processes.
+    adb.py           per-device adb (shell quoting, exec_out, spawn_shell, wait_for_boot)
+    host.py          host-wide adb: devices -l, pair/connect, mdns, run_adb (AdbCommandError)
+    emulator.py      SDK lookup, AVDs, start (waits for boot) / stop, snapshots
+  doctor.py          environment checks; every non-OK Check carries a fix
+  cli.py             `geppetto` console script (argparse, no extra deps; QR needs [cli])
   ui/                pure data: Bounds, Widget (keeps its lxml node), Children, WindowDump
   models/            enums: By, Direction, WifiSecurityType, CommonClasses
   services/          OS features on top of AdbClient: wifi, lockscreen, notification
   analyzers/         [extra "analyzers"] ScreenAnalyzer (Pillow, imagehash), VideoAnalyzer (OpenCV)
   hardware/          [extra "hardware"] AcronameController (brainstem)
 tests/               unit tests, no device: subprocess.run is replaced by AdbRecorder
+integration/         real device/emulator tests (skipped without one); CI runs them on an emulator
 ```
 
 Layering (imports only go downwards):
@@ -95,8 +101,13 @@ analyzers, hardware: optional, imported lazily from geppetto/__init__.py
 - Public APIs have docstrings saying what they return and which `GeppettoError` they raise.
 - README/docs updated when usage changes; CHANGELOG updated; AGENTS.md updated when rules or
   architecture change.
-- CI (`.github/workflows/ci.yml`, Python 3.12 and 3.13) is green. Publishing to PyPI runs CI first
-  and requires the tag `vX.Y.Z` to equal `__version__`.
+- CI is green. `ci.yml` (main, and called by the publish) runs lint, format, mypy and unit tests
+  on Python 3.12/3.13. `dev.yml` (push/PR to `dev`) runs those unit tests on one runner and the
+  `integration/` suite on an Android emulator (API 34, KVM, cached AVD) on another; failure
+  artifacts are uploaded. Publishing to PyPI runs `ci.yml` first and requires the tag `vX.Y.Z` to
+  equal `__version__`.
+- Behaviour that only a real device proves (UI hierarchy, recording, the plugin's artifacts, CLI
+  output) gets an `integration/` test too.
 
 ## Workflow
 
@@ -113,6 +124,7 @@ analyzers, hardware: optional, imported lazily from geppetto/__init__.py
 ```bash
 uv sync --group dev --all-extras        # dev environment (Python ≥ 3.12)
 uv run pytest                           # unit tests, no device needed
+uv run pytest integration --serial emulator-5554 --geppetto-artifacts=on-failure
 uv run ruff check src tests && uv run ruff format src tests
 uv run mypy src
 uv build                                # wheel + sdist (version read from __init__.py)
@@ -133,4 +145,8 @@ If the machine has no Python 3.12, `UV_PYTHON=3.14 uv sync --group dev` works lo
   against someone's device.
 - **Reboot** is not done when `adb wait-for-device` returns; wait for `sys.boot_completed`
   (`Device.wait_for_boot`).
+- **A booting emulator** shows as `device` in `adb devices` while its shell still answers
+  `error: closed`; keep retrying (`core.emulator._reach`).
+- **Processes started by a coding agent's sandbox** may be killed when the command ends, even with
+  `start_new_session`: drive an emulator start-to-stop in one command when validating.
 - `Enum` members with equal values become aliases (that is how `Colors.ALMOST_BLUE` was lost).

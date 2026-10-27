@@ -1,0 +1,94 @@
+name: Dev
+
+# The dev branch: unit tests and emulator integration tests run in parallel, each on its own
+# runner. Unit tests reuse ci.yml (lint, format, mypy, pytest on 3.12/3.13).
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: dev-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Unit tests
+    uses: ./.github/workflows/ci.yml
+
+  emulator:
+    name: Emulator tests (API ${{ matrix.api-level }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        api-level: [34]
+    env:
+      ARCH: x86_64
+      TARGET: google_apis
+      AVD_OPTIONS: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # The emulator needs hardware acceleration: give the runner user access to /dev/kvm.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install the project
+        run: uv sync --group dev --python 3.12
+
+      - name: Cache the AVD
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-${{ matrix.api-level }}-${{ env.TARGET }}-${{ env.ARCH }}
+
+      - name: Create the AVD snapshot (cache miss)
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ env.TARGET }}
+          arch: ${{ env.ARCH }}
+          force-avd-creation: false
+          emulator-options: ${{ env.AVD_OPTIONS }}
+          disable-animations: false
+          script: echo "AVD snapshot created"
+
+      - name: Integration tests on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: ${{ env.TARGET }}
+          arch: ${{ env.ARCH }}
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save ${{ env.AVD_OPTIONS }}
+          disable-animations: true
+          script: >-
+            uv run pytest integration -v
+            --serial emulator-5554
+            --geppetto-artifacts=on-failure
+            --geppetto-output=integration-results
+            --junitxml=integration-results/junit.xml
+
+      - name: Upload failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-results-api${{ matrix.api-level }}
+          path: integration-results/
+          retention-days: 7
