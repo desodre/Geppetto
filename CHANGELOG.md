@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- GitHub Actions closes referenced issues and their sub-issues after commits or PRs land on `main`.
 - The pytest `device` fixture now has function scope while reusing its connection for the session.
   A test using only `device` captures artifacts only from its selected serial.
 - Failure artifacts now include video by default (`--no-geppetto-record` disables it). Logcat

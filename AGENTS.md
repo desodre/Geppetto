@@ -118,6 +118,8 @@ analyzers, hardware: optional, imported lazily from geppetto/__init__.py
   PR into `main`; don't push to `main` directly.
 - **Commits:** Conventional Commits in English (`feat(pytest): …`, `fix(adb): …`, `docs: …`,
   `ci: …`, `chore: …`, `test: …`), body explains *why*, `(#issue)` reference.
+- Merged PRs and commits on `main` close issues referenced as `Refs #N`, `Closes #N`, or `(#N)`;
+  the Action also closes their same-repository sub-issues. Reference only completed work.
 - Don't publish, tag or push without the maintainer asking.
 
 ## Commands
