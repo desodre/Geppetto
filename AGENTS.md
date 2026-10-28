@@ -64,6 +64,7 @@ analyzers, hardware: optional, imported lazily from geppetto/__init__.py
   cheap (`Device`/uiautomator2 are imported lazily) and never let an artifact failure change a test
   outcome. Its own tests use `pytester` with a fake `Device` from `geppetto_device_factory`; this
   repo's suite sets `geppetto_artifacts = "never"` so the capture does not touch the library tests.
+  It records video by default and reads recent logcat without clearing device-wide buffers.
 - New big features get their own module/package (`locator/`, `cli/`…) depending on `Device`,
   never the other way round.
 
