@@ -57,17 +57,18 @@ jobs:
             }
 
             const references = new Set();
-            const directive = /\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved|ref|refs|reference|references)\s*:?\s*#\d+/i;
+            const directive = /\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved|ref|refs|reference|references)\s*:?\s*(#[1-9]\d*(?:(?:\s*(?:,|&|and)\s*|\s+)#[1-9]\d*)*)/gi;
             for (const text of texts) {
               // Conventional Commit suffixes such as "fix(adb): ... (#42)".
               for (const match of text.matchAll(/\(#([1-9]\d*)\)/g)) {
                 references.add(Number(match[1]));
               }
-              // Explicit reference lines can list several issues: "Refs #7, #8, #9".
+              // Only the issue list after a directive counts; later prose on the line does not.
               for (const line of text.split(/\r?\n/)) {
-                if (!directive.test(line)) continue;
-                for (const match of line.matchAll(/(?<![\w/#])#([1-9]\d*)\b/g)) {
-                  references.add(Number(match[1]));
+                for (const directed of line.matchAll(directive)) {
+                  for (const match of directed[1].matchAll(/#([1-9]\d*)/g)) {
+                    references.add(Number(match[1]));
+                  }
                 }
               }
             }
