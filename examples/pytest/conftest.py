@@ -20,3 +20,13 @@ def settings(device):
     device.open_app("com.android.settings")
     yield device
     device.kill_app("com.android.settings")
+
+
+@pytest.fixture
+def login_app(device):
+    """Start the bundled login demo in a clean state for each test."""
+    package = "com.example.geppettologindemo"
+    device.kill_app(package)
+    device.open_app(package)
+    yield device
+    device.kill_app(package)
