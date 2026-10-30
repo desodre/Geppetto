@@ -87,6 +87,8 @@ Every exception derives from `GeppettoError`:
 | `DeviceIsSecureError` | `adb root` refused on a secure build |
 | `AdbCommandError` | a host-side adb command failed (message has adb's output) |
 | `EmulatorError` | emulator missing, unknown AVD, or the emulator exited while starting |
+| `LogNotFoundError` | `expect()` timed out, or `expect_no()` saw the line |
+| `AppCrashedError` | a watched app crashed, ANR'd or died by a native signal |
 
 ### Logging
 
@@ -133,6 +135,27 @@ Override the `geppetto_device_factory` fixture in `conftest.py` to customise how
 created. A runnable login example and its small Android app live in
 [`examples/pytest`](examples/pytest).
 
+## Logcat and crash detection
+
+```python
+with device.logcat(package="com.example", level="I") as log:    # from now on, nothing cleared
+    device.click(device.await_widget(By.ID, "com.example:id/pay"))
+    log.expect(r"Payment OK", timeout=10)                       # waits for a new matching line
+    log.expect_no("Exception", within=2)                        # fails if one shows up
+
+with device.watch_crashes("com.example"):                       # AppCrashedError at the end of
+    device.click(...)                                            # the block, with the stack trace
+```
+
+Filters: `package` (follows the app across restarts), `tags`, minimum `level` (`V D I W E F`)
+and a `pattern` regex. Crashes detected: Java (`FATAL EXCEPTION` + stack), ANR (`ANR in …` +
+reason) and native signals (`Fatal signal …` + backtrace and tombstone path).
+
+In pytest, `--geppetto-watch com.example` (or `geppetto_watch` in the ini, or
+`@pytest.mark.geppetto_watch("com.example")`) fails a device test when that app crashes during it,
+even if its assertions passed, and saves `crash.txt` with the artifacts. Only the packages you name
+are watched, so an unrelated system ANR on a slow emulator does not fail your tests.
+
 ## Command line
 
 ```bash
@@ -149,7 +172,34 @@ geppetto emulator stop emulator-5554
 geppetto pair 192.168.0.10:40111 123456   # Wireless debugging › Pair device with pairing code
 geppetto pair --qr                        # …or scan a QR code (pip install 'geppetto-android[cli]')
 geppetto connect 192.168.0.10:37000
+
+geppetto inspect                          # screen + selectors in the browser, records code
 ```
+
+### Inspector
+
+```bash
+geppetto inspect            # opens http://127.0.0.1:8765/ for the only connected device
+```
+
+The device screen in your browser. Hover to highlight elements; click one to see its attributes and
+the **recommended selector** (the most stable one that matches only that element: resource-id,
+content-desc, text, id + text, relative to a parent with a unique id, and only as a last resort a
+position, flagged as fragile). Switch to **Record** and your taps, typing and Back/Home presses are
+executed on the device and turned into a runnable script (copy or download it):
+
+```python
+from geppetto import By, Device
+
+
+def main() -> None:
+    device = Device('emulator-5554')
+    device.click(device.await_widget(By.ID, 'com.android.settings:id/search_action_bar'))
+    device.input_text('wifi')
+```
+
+It listens on `127.0.0.1` only (the page can tap and type on the device); `--host` exposes it on
+purpose, `--port 0` picks a free port. The first run installs the uiautomator2 agent on the device.
 
 Commands that need one device take `-s/--serial`, then `GEPPETTO_SERIAL`, then the only ready
 device. Errors print one line on stderr and exit with 1. `geppetto doctor` exits with 1 when a
@@ -160,7 +210,8 @@ the default install folder).
 
 - `Device`: primary facade and entry point.
 - `geppetto.pytest_plugin`: fixtures, CLI options and failure artifacts for pytest.
-- `geppetto` command line (`geppetto.cli`): devices, doctor, shot, record, emulator, pairing.
+- `geppetto` command line (`geppetto.cli`): devices, doctor, shot, record, emulator, pairing, inspect.
+- `geppetto.inspector`: selector recommendation, code recorder and the local web inspector.
 - `geppetto.core`: ADB/Fastboot clients.
 - `geppetto.ui`: UI models (`WindowDump`, `Widget`, `Bounds`, `Children`).
 - `geppetto.services`: automation services (`wifi`, `lockscreen`, `notification`).

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+### Added
+- **`geppetto inspect`**: the device screen in the browser with hover highlight, element attributes
+  and the recommended selector (unique in the dump, stable attributes first, position-based ones
+  flagged as fragile); **Record** mode taps/types/presses keys on the device and builds a runnable
+  Python script (copy / download). Local-only by default (`--host` to expose, `--port 0` for a free
+  port). Standard library only.
+- `geppetto.inspector`: `recommend()`/`Selector`, `xpath_literal()`, `Recorder`, `InspectorServer`,
+  `hierarchy_json()`.
+- **Logcat streaming** (`Device.logcat()`, `LogcatStream`, `LogLine`): live from the device's current
+  time, filters by package/tag/level/regex, ring buffer, `expect()` / `expect_no()`
+  (`LogNotFoundError`).
+- **Crash detection** (`Device.watch_crashes()`, `CrashWatcher`, `Crash`): Java exceptions, ANRs and
+  native signals with stack/backtrace/tombstone; `AppCrashedError`. pytest: `--geppetto-watch`,
+  ini `geppetto_watch`, marker `geppetto_watch(...)` fail a test when a watched app crashes and add
+  `crash.txt` to the artifacts.
+
+### Fixed
+- Inspector: clickable rows without attributes of their own (the usual Android list item) get a
+  stable selector through their label instead of a fragile position.
+
+### Changed
 - GitHub Actions closes referenced issues and their sub-issues after commits or PRs land on `main`.
 - The pytest `device` fixture now has function scope while reusing its connection for the session.
   A test using only `device` captures artifacts only from its selected serial.

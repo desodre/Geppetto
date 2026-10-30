@@ -8,6 +8,7 @@
                      | stop SERIAL | snapshot {save,load,list} [NAME] -s SERIAL
     geppetto pair HOST:PORT [CODE] | pair --qr
     geppetto connect HOST:PORT | disconnect HOST:PORT
+    geppetto inspect [-s SERIAL] [--port 8765] [--host 127.0.0.1] [--no-browser]
 
 Commands that need one device take ``-s/--serial``, then ``GEPPETTO_SERIAL``, then the only ready
 device. Exit codes: 0 ok, 1 failure (message on stderr), 2 usage error, 130 interrupted.
@@ -229,6 +230,40 @@ def cmd_disconnect(args: argparse.Namespace) -> int:
     return 0
 
 
+# ── inspector ────────────────────────────────────────────────────────
+
+
+def cmd_inspect(args: argparse.Namespace) -> int:
+    from .device import Device  # uiautomator2: only for this command
+    from .inspector import InspectorServer
+
+    serial = pick_serial(args.serial)
+    if args.host not in ("127.0.0.1", "localhost", "::1"):
+        print(
+            f"geppetto: warning: listening on {args.host}: anyone who reaches this port can tap "
+            "and type on the device.",
+            file=sys.stderr,
+        )
+    _out(f"Connecting to {serial} (installs the uiautomator2 agent on first use)…")
+    device = Device(serial, output_dir=args.output, log_to_console=False)
+    server = InspectorServer(device, host=args.host, port=args.port)
+    _out(f"Geppetto Inspector on {server.url}  (Ctrl+C to stop)")
+    if not args.no_browser:
+        import webbrowser
+
+        webbrowser.open(server.url)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.shutdown()
+    if server.recorder.steps:
+        _out("\nRecorded script:\n")
+        _out(server.recorder.script())
+    return 0
+
+
 # ── parser ───────────────────────────────────────────────────────────
 
 
@@ -290,6 +325,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--qr", action="store_true", help="show a QR code to scan instead")
     p.add_argument("--timeout", type=float, default=120)
     p.set_defaults(func=cmd_pair)
+
+    p = sub.add_parser("inspect", help="screen, hierarchy and selectors in a browser; record code")
+    serial_opt(p)
+    p.add_argument("--port", type=int, default=8765, help="0 picks a free port (default 8765)")
+    p.add_argument("--host", default="127.0.0.1", help="interface to listen on (default: local)")
+    p.add_argument("--no-browser", action="store_true", help="do not open the browser")
+    p.add_argument("-o", "--output", default="./results", help="Device result folder")
+    p.set_defaults(func=cmd_inspect)
 
     p = sub.add_parser("connect", help="adb connect HOST:PORT")
     p.add_argument("address")

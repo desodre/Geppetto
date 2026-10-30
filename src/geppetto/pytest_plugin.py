@@ -17,6 +17,8 @@ Options (output and artifact mode can also be set in ``[tool.pytest.ini_options]
 ``--geppetto-artifacts``   ``on-failure`` (default), ``always`` or ``never``
 ``--no-geppetto-record``   disable screen recording (enabled by default)
 ``--geppetto-logcat-seconds``  keep this many seconds of test logcat (default: 120)
+``--geppetto-watch PKG``   fail the test when this app crashes, ANRs or dies by a signal during it
+                           (repeatable; ini ``geppetto_watch``; marker ``geppetto_watch("pkg")``)
 
 Artifacts of a device test go to ``<device result folder>/Tests/<test id>/``: ``screenshot.png``,
 ``window_dump.xml``, ``logcat.txt`` (recent test logcat without clearing the device buffer)
@@ -52,6 +54,7 @@ import pytest
 from .core.adb import list_devices
 
 if TYPE_CHECKING:  # Device pulls uiautomator2: imported only when a test asks for a device
+    from .crashes import CrashWatcher
     from .device import Device
     from .recording import ScreenRecording
 
@@ -113,6 +116,15 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         metavar="SECONDS",
         help="Keep this many seconds of recent test logcat (default: 120).",
     )
+    group.addoption(
+        "--geppetto-watch",
+        action="append",
+        default=[],
+        dest="geppetto_watch",
+        metavar="PACKAGE",
+        help="Fail a device test when this app crashes during it (repeatable).",
+    )
+    parser.addini("geppetto_watch", "Packages whose crashes fail device tests.", type="linelist")
     parser.addini("geppetto_output", "Folder for logs and artifacts.", default="./results")
     parser.addini("geppetto_artifacts", "on-failure | always | never", default="on-failure")
 
@@ -123,6 +135,10 @@ def pytest_configure(config: pytest.Config) -> None:
         raise pytest.UsageError("--geppetto-logcat-seconds must be a positive finite number")
     config.addinivalue_line(
         "markers", "geppetto: test uses a Geppetto device (set automatically by the fixtures)."
+    )
+    config.addinivalue_line(
+        "markers",
+        "geppetto_watch(*packages): fail the test if one of these apps crashes during it.",
     )
 
 
@@ -213,6 +229,7 @@ class _Capture:
 
     device: Device
     recording: ScreenRecording | None = None
+    crash_watcher: CrashWatcher | None = None
     started_at: float | None = None
     folder: Path | None = None
     artifacts: dict[str, Path] = field(default_factory=dict)
@@ -265,6 +282,10 @@ def _collect_one(item: pytest.Item, capture: _Capture) -> None:
     _save(capture, "logcat.txt", lambda p: p.write_text(_recent_logcat(capture, seconds)))
     _save(capture, "screenshot.png", lambda p: p.write_bytes(dev.adb.exec_out("screencap -p")))
     _save(capture, "window_dump.xml", lambda p: p.write_text(str(dev.get_window_dump())))
+    watcher = capture.crash_watcher
+    crashes = watcher.crashes(settle=False) if watcher is not None else []
+    if crashes:
+        _save(capture, "crash.txt", lambda p: p.write_text("\n\n".join(map(str, crashes))))
     recording = capture.recording
     if recording is not None:
         capture.recording = None
@@ -286,7 +307,8 @@ def _collect(item: pytest.Item) -> None:
 def _geppetto_capture(request: pytest.FixtureRequest) -> Generator[None]:
     """Before a device test: note device time and start recording for its report."""
     item = request.node
-    if not _uses_device(item) or _artifacts_mode(request.config) == "never":
+    pacotes = _watched_packages(item)
+    if not _uses_device(item) or (_artifacts_mode(request.config) == "never" and not pacotes):
         yield
         return
     # The devices this test really uses (a conftest may override `device` alone).
@@ -297,6 +319,15 @@ def _geppetto_capture(request: pytest.FixtureRequest) -> Generator[None]:
     )
     captures = []
     for dev in used:
+        capture = _Capture(dev)
+        if pacotes:
+            try:
+                capture.crash_watcher = dev.watch_crashes(*pacotes).__enter__()
+            except Exception as erro:  # noqa: BLE001
+                logger.warning("Could not watch crashes on %s: %s", dev.serial, erro)
+        if _artifacts_mode(request.config) == "never":
+            captures.append(capture)
+            continue
         try:
             started_at = float(dev.adb.shell(["date", "+%s.%3N"]).strip())
         except Exception as erro:  # noqa: BLE001
@@ -308,7 +339,9 @@ def _geppetto_capture(request: pytest.FixtureRequest) -> Generator[None]:
                 recording = dev.start_recording(_safe_name(item.name))
             except Exception as erro:  # noqa: BLE001
                 logger.warning("Could not start recording on %s: %s", dev.serial, erro)
-        captures.append(_Capture(dev, recording, started_at))
+        capture.recording = recording
+        capture.started_at = started_at
+        captures.append(capture)
     item.stash[_CAPTURES] = captures
     yield
 
@@ -321,6 +354,35 @@ def _discard_remaining(item: pytest.Item) -> None:
             except Exception as erro:  # noqa: BLE001 — cleanup must not alter the test result
                 logger.warning("Could not discard recording on %s: %s", capture.device.serial, erro)
             capture.recording = None
+        if capture.crash_watcher is not None:
+            capture.crash_watcher.stream.stop()
+
+
+def _watched_packages(item: pytest.Item) -> list[str]:
+    pacotes = list(item.config.getoption("geppetto_watch")) + list(
+        item.config.getini("geppetto_watch")
+    )
+    for marker in item.iter_markers("geppetto_watch"):
+        pacotes += [str(p) for p in marker.args]
+    return list(dict.fromkeys(pacotes))
+
+
+def _fail_on_crash(item: pytest.Item, report: pytest.TestReport) -> None:
+    """A watched app crashed during the test: the test fails with the crash, even if it passed."""
+    crashes = [
+        crash
+        for capture in item.stash.get(_CAPTURES, [])
+        if capture.crash_watcher is not None
+        for crash in capture.crash_watcher.crashes()
+    ]
+    if not crashes:
+        return
+    texto = "\n\n".join(map(str, crashes))
+    if report.passed:
+        report.outcome = "failed"
+        report.longrepr = f"App crashed during the test:\n{texto}"
+    else:
+        report.sections.append(("geppetto crash", texto))
 
 
 @pytest.hookimpl(wrapper=True)
@@ -330,7 +392,11 @@ def pytest_runtest_makereport(
     report = yield
     if _CAPTURES not in item.stash:
         return report
+    if report.when == "call":
+        _fail_on_crash(item, report)
     mode = _artifacts_mode(item.config)
+    if mode == "never":
+        return report
     # An expected failure (xfail) also failed on the device: its artifacts are as useful.
     falhou = report.failed or (report.when == "call" and hasattr(report, "wasxfail"))
     if falhou or (mode == "always" and report.when == "call"):

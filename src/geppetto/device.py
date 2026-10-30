@@ -12,7 +12,9 @@ from uiautomator2 import Device as U2Device
 from ._logging import DeviceLogger
 from .core.adb import AdbClient, wait_for_boot
 from .core.fastboot import FastbootClient
+from .crashes import CrashWatcher
 from .exceptions import DeviceTimeoutError, WidgetNotFoundError
+from .logcat import LogcatStream
 from .models.by import By
 from .recording import ScreenRecording
 from .services.lockscreen import LockscreenService
@@ -375,6 +377,24 @@ class Device:
     def dump_logcat(self, *, fmt: str = "threadtime") -> str:
         """Everything in the log buffers right now (``logcat -d``), in format *fmt*."""
         return self.adb.shell(["logcat", "-d", "-v", fmt])
+
+    def logcat(
+        self,
+        *,
+        package: str | None = None,
+        tags: list[str] | None = None,
+        level: str = "V",
+        pattern: str | None = None,
+    ) -> LogcatStream:
+        """A live logcat from now on, filtered; use it with ``with`` (or ``start()``/``stop()``)
+        and ``expect()``/``expect_no()`` lines."""
+        return LogcatStream(self.adb, package=package, tags=tags, level=level, pattern=pattern)
+
+    def watch_crashes(self, *packages: str) -> CrashWatcher:
+        """``with device.watch_crashes("com.app"):`` raises :class:`AppCrashedError` at the end of
+        the block if one of *packages* (any app, without arguments) crashed, ANR'd or died by a
+        native signal."""
+        return CrashWatcher(LogcatStream(self.adb, level="F"), packages)
 
     def start_recording(self, name: str = "", time_limit: int = 180) -> ScreenRecording:
         """Start recording the screen in the background; finish it with

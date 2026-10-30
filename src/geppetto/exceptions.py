@@ -24,3 +24,11 @@ class EmulatorError(GeppettoError):
 
 class AdbCommandError(GeppettoError):
     """A host-side ``adb`` command failed; the message carries what adb printed."""
+
+
+class LogNotFoundError(GeppettoError):
+    """An expected logcat line did not show up (or a forbidden one did)."""
+
+
+class AppCrashedError(GeppettoError):
+    """The app crashed (Java exception, ANR or native signal) while it was being watched."""
