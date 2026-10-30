@@ -22,6 +22,15 @@
 - Inspector: clickable rows without attributes of their own (the usual Android list item) get a
   stable selector through their label instead of a fragile position.
 
+### Changed
+- GitHub Actions closes referenced issues and their sub-issues after commits or PRs land on `main`.
+- The pytest `device` fixture now has function scope while reusing its connection for the session.
+  A test using only `device` captures artifacts only from its selected serial.
+- Failure artifacts now include video by default (`--no-geppetto-record` disables it). Logcat
+  uses a bounded, configurable time window (`--geppetto-logcat-seconds`) without clearing the
+  device-wide buffer. Fixture teardown failures keep their artifacts too.
+- `examples/pytest` includes a buildable login app and a tested login flow.
+
 ## 2.1.0
 
 ### Highlights

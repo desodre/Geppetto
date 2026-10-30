@@ -15,3 +15,5 @@ wheels/
 
 # other files
 /logs/
+examples/pytest/results/
+examples/pytest/report.html

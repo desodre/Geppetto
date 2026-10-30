@@ -111,7 +111,7 @@ def test_settings_opens(device):
 pytest                                   # the only connected device is picked
 pytest --serial emulator-5554            # repeat --serial for several (or GEPPETTO_SERIAL=a,b)
 pytest --all-devices                     # every device adb reports as ready
-pytest --geppetto-record --html=report.html --self-contained-html
+pytest --serial emulator-5554 --html=report.html --self-contained-html
 ```
 
 When a device test fails (including `xfail`), Geppetto saves in
@@ -121,15 +121,19 @@ When a device test fails (including `xfail`), Geppetto saves in
 |---|---|
 | `screenshot.png` | the screen at the failure (embedded in the pytest-html report) |
 | `window_dump.xml` | the UI hierarchy at the failure |
-| `logcat.txt` | the log produced by the test (logcat is cleared before each device test) |
-| `screenrecord.mp4` | the whole test, with `--geppetto-record` (Android caps it at 180 s) |
+| `logcat.txt` | the last 120 seconds of the test, without clearing device logs |
+| `screenrecord.mp4` | the test recording (Android caps it at 180 s) |
 
 The folder is printed in the failure report and written as a JUnit property
 `geppetto_artifacts[<serial>]`. Options: `--geppetto-output DIR`,
-`--geppetto-artifacts on-failure|always|never` (also as `geppetto_output` / `geppetto_artifacts`
-in `[tool.pytest.ini_options]`). Without a device, tests that need one are skipped with the reason.
+`--geppetto-artifacts on-failure|always|never`, `--geppetto-logcat-seconds N`, and
+`--no-geppetto-record` to disable video (also set `geppetto_output` / `geppetto_artifacts`
+in `[tool.pytest.ini_options]`). The `device` fixture has function scope while reusing its
+connection during the session; `devices` has session scope. Without a device, tests that need one
+are skipped with the reason.
 Override the `geppetto_device_factory` fixture in `conftest.py` to customise how each `Device` is
-created. A runnable example lives in [`examples/pytest`](examples/pytest).
+created. A runnable login example and its small Android app live in
+[`examples/pytest`](examples/pytest).
 
 ## Logcat and crash detection
 

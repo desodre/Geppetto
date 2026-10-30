@@ -29,8 +29,14 @@ class FakeProcess:
 class FakeAdb:
     serial = "FAKE"
 
+    def __init__(self):
+        self.date_reads = 0
+
     def shell(self, command):
         CALLS.append(command)
+        if command == ["date", "+%s.%3N"]:
+            self.date_reads += 1
+            return f"{1800000000 + self.date_reads * 10}.000"
         if command[:2] == ["logcat", "-d"]:
             return "10-27 12:00:00 E App: something broke\\n"
         return ""
@@ -106,7 +112,14 @@ def sem_aparelhos(monkeypatch):
 
 def test_options_are_registered(pytester):
     result = pytester.runpytest("--help")
-    result.stdout.fnmatch_lines(["*--serial=SERIAL*", "*--all-devices*", "*--geppetto-output=DIR*"])
+    result.stdout.fnmatch_lines(
+        [
+            "*--serial=SERIAL*",
+            "*--all-devices*",
+            "*--geppetto-output=DIR*",
+            "*--no-geppetto-record*",
+        ]
+    )
 
 
 def test_device_fixture_uses_the_serial(pytester, sem_aparelhos):
@@ -222,20 +235,32 @@ def test_failure_saves_screenshot_dump_and_logcat(pytester, sem_aparelhos):
     ).exists()
 
 
-def test_logcat_is_cleared_before_each_device_test(pytester, sem_aparelhos):
+def test_logcat_uses_a_recent_window_without_clearing_the_device(pytester, sem_aparelhos):
     pytester.makeconftest(CONFTEST)
     pytester.makepyfile(
         """
         from conftest import CALLS
 
         def test_um(device):
-            assert "logcat -c" in CALLS
+            assert "logcat -c" not in CALLS
+
+        def test_window_was_used():
+            assert ["logcat", "-d", "-v", "threadtime", "-T", "1800000018.000"] in CALLS
         """
     )
-    pytester.runpytest("--serial", "S1").assert_outcomes(passed=1)
+    result = pytester.runpytest(
+        "--serial", "S1", "--geppetto-artifacts=always", "--geppetto-logcat-seconds=2"
+    )
+    result.assert_outcomes(passed=2)
 
 
-def test_record_keeps_the_video_only_on_failure(pytester, sem_aparelhos):
+def test_invalid_logcat_window_is_rejected(pytester):
+    result = pytester.runpytest("--geppetto-logcat-seconds=0")
+    assert result.ret != 0
+    assert "must be a positive finite number" in result.stderr.str()
+
+
+def test_record_keeps_the_video_only_on_failure_by_default(pytester, sem_aparelhos):
     pytester.makeconftest(CONFTEST)
     pytester.makepyfile(
         """
@@ -252,9 +277,67 @@ def test_record_keeps_the_video_only_on_failure(pytester, sem_aparelhos):
             assert len(removidos) == 2  # the passing video was discarded, the failing one pulled
         """
     )
-    result = pytester.runpytest("--serial", "S1", "--geppetto-record")
+    result = pytester.runpytest("--serial", "S1")
     result.assert_outcomes(passed=2, failed=1)
     assert (_pasta(result, "test_falha") / "screenrecord.mp4").read_bytes() == b"MP4"
+
+
+def test_recording_can_be_disabled(pytester, sem_aparelhos):
+    pytester.makeconftest(CONFTEST)
+    pytester.makepyfile("def test_falha(device): assert False")
+    result = pytester.runpytest("--serial", "S1", "--no-geppetto-record")
+    result.assert_outcomes(failed=1)
+    assert not (_pasta(result, "test_falha") / "screenrecord.mp4").exists()
+
+
+def test_teardown_failure_keeps_the_video(pytester, sem_aparelhos):
+    pytester.makeconftest(CONFTEST)
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.fixture
+        def broken_cleanup(device):
+            yield device
+            raise RuntimeError("cleanup failed")
+
+        def test_teardown(broken_cleanup):
+            pass
+        """
+    )
+    result = pytester.runpytest("--serial", "S1")
+    result.assert_outcomes(passed=1, errors=1)
+    assert (_pasta(result, "test_teardown") / "screenrecord.mp4").read_bytes() == b"MP4"
+
+
+def test_device_is_function_scoped_but_reuses_the_session_connection(pytester, sem_aparelhos):
+    pytester.makeconftest(CONFTEST)
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.fixture(scope="function")
+        def local_device(device):
+            return device
+
+        def test_first(local_device):
+            local_device._test_marker = "same"
+
+        def test_second(device, devices):
+            assert device._test_marker == "same"
+            assert device is devices[0]
+        """
+    )
+    pytester.runpytest("--serial", "S1", "--no-geppetto-record").assert_outcomes(passed=2)
+
+
+def test_device_only_captures_the_first_selected_serial(pytester, sem_aparelhos):
+    pytester.makeconftest(CONFTEST)
+    pytester.makepyfile("def test_falha(device): assert False")
+    result = pytester.runpytest("--serial", "S1", "--serial", "S2", "--no-geppetto-record")
+    result.assert_outcomes(failed=1)
+    assert (_pasta(result, "test_falha") / "screenshot.png").exists()
+    assert "geppetto artifacts (S2)" not in result.stdout.str()
 
 
 def test_always_and_never_modes(pytester, sem_aparelhos):

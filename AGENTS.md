@@ -70,6 +70,7 @@ analyzers, hardware: optional, imported lazily from geppetto/__init__.py
   cheap (`Device`/uiautomator2 are imported lazily) and never let an artifact failure change a test
   outcome. Its own tests use `pytester` with a fake `Device` from `geppetto_device_factory`; this
   repo's suite sets `geppetto_artifacts = "never"` so the capture does not touch the library tests.
+  It records video by default and reads recent logcat without clearing device-wide buffers.
 - New big features get their own module/package (`locator/`, `cli/`…) depending on `Device`,
   never the other way round.
 
@@ -123,6 +124,8 @@ analyzers, hardware: optional, imported lazily from geppetto/__init__.py
   PR into `main`; don't push to `main` directly.
 - **Commits:** Conventional Commits in English (`feat(pytest): …`, `fix(adb): …`, `docs: …`,
   `ci: …`, `chore: …`, `test: …`), body explains *why*, `(#issue)` reference.
+- Merged PRs and commits on `main` close issues referenced as `Refs #N`, `Closes #N`, or `(#N)`;
+  the Action also closes their same-repository sub-issues. Reference only completed work.
 - Don't publish, tag or push without the maintainer asking.
 
 ## Commands

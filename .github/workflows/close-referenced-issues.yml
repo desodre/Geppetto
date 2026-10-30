@@ -1,0 +1,124 @@
+name: Close referenced issues
+
+# Run after changes land on the default branch. This also covers commits from merged PRs
+# without granting a write token to code from an untrusted PR branch.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+  issues: write
+
+concurrency:
+  group: close-referenced-issues-main
+  cancel-in-progress: false
+
+jobs:
+  close-issues:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const { before, after } = context.payload;
+            if (!before || /^0+$/.test(before)) {
+              core.info('No previous main commit to compare; skipping.');
+              return;
+            }
+
+            const commits = [];
+            for (let page = 1; ; page++) {
+              const { data } = await github.request(
+                'GET /repos/{owner}/{repo}/compare/{basehead}',
+                { owner, repo, basehead: `${before}...${after}`, per_page: 100, page }
+              );
+              commits.push(...data.commits);
+              if (data.commits.length < 100) break;
+            }
+
+            const texts = commits.map(commit => commit.commit.message);
+            const pullRequests = new Map();
+            for (const commit of commits) {
+              const associated = await github.paginate(
+                'GET /repos/{owner}/{repo}/commits/{commit_sha}/pulls',
+                { owner, repo, commit_sha: commit.sha, per_page: 100 }
+              );
+              for (const pr of associated) {
+                if (pr.merged_at && pr.base.repo.full_name === `${owner}/${repo}`) {
+                  pullRequests.set(pr.number, pr);
+                }
+              }
+            }
+            for (const pr of pullRequests.values()) {
+              texts.push(pr.title || '', pr.body || '');
+            }
+
+            const references = new Set();
+            const directive = /\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved|ref|refs|reference|references)\s*:?\s*(#[1-9]\d*(?:(?:\s*(?:,|&|and)\s*|\s+)#[1-9]\d*)*)/gi;
+            for (const text of texts) {
+              // Conventional Commit suffixes such as "fix(adb): ... (#42)".
+              for (const match of text.matchAll(/\(#([1-9]\d*)\)/g)) {
+                references.add(Number(match[1]));
+              }
+              // Only the issue list after a directive counts; later prose on the line does not.
+              for (const line of text.split(/\r?\n/)) {
+                for (const directed of line.matchAll(directive)) {
+                  for (const match of directed[1].matchAll(/#([1-9]\d*)/g)) {
+                    references.add(Number(match[1]));
+                  }
+                }
+              }
+            }
+
+            const visited = new Set();
+            async function closeTree(number) {
+              if (visited.has(number)) return;
+              visited.add(number);
+
+              let issue;
+              try {
+                ({ data: issue } = await github.request(
+                  'GET /repos/{owner}/{repo}/issues/{issue_number}',
+                  { owner, repo, issue_number: number }
+                ));
+              } catch (error) {
+                if (error.status === 404) {
+                  core.info(`Skipping missing issue #${number}`);
+                  return;
+                }
+                throw error;
+              }
+              if (issue.pull_request) {
+                core.info(`Skipping pull request #${number}`);
+                return;
+              }
+
+              const children = await github.paginate(
+                'GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues',
+                { owner, repo, issue_number: number, per_page: 100 }
+              );
+              const thisRepo = `https://api.github.com/repos/${owner}/${repo}`.toLowerCase();
+              for (const child of children) {
+                if (child.repository_url.toLowerCase() === thisRepo) {
+                  await closeTree(child.number);
+                } else {
+                  core.info(`Skipping cross-repository sub-issue ${child.html_url}`);
+                }
+              }
+
+              if (issue.state !== 'closed') {
+                await github.request('PATCH /repos/{owner}/{repo}/issues/{issue_number}', {
+                  owner, repo, issue_number: number,
+                  state: 'closed', state_reason: 'completed'
+                });
+                core.info(`Closed issue #${number}`);
+              }
+            }
+
+            for (const number of [...references].sort((a, b) => a - b)) {
+              await closeTree(number);
+            }
+            core.info(`Processed ${references.size} referenced issue(s).`);
