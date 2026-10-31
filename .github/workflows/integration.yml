@@ -1,0 +1,122 @@
+name: Android integration
+
+on:
+  workflow_call:
+    inputs:
+      api-level:
+        type: number
+        default: 34
+      suite:
+        type: string
+        default: full
+  workflow_dispatch:
+    inputs:
+      api-level:
+        description: Android API level
+        type: choice
+        options: ["34", "26"]
+        default: "34"
+      suite:
+        description: Full suite or minimum-version smoke
+        type: choice
+        options: [full, smoke]
+        default: full
+
+permissions:
+  contents: read
+
+jobs:
+  emulator:
+    name: Emulator API ${{ inputs.api-level }} (${{ inputs.suite }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ARCH: x86_64
+      TARGET: google_apis
+      AVD_OPTIONS: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate suite
+        env:
+          SUITE: ${{ inputs.suite }}
+        run: |
+          case "$SUITE" in full|smoke) ;; *) exit 1 ;; esac
+
+      # The emulator needs hardware acceleration: give the runner user access to /dev/kvm.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install the project
+        run: uv sync --frozen --group dev --python 3.12
+
+      - name: Prepare report directory
+        run: mkdir -p integration-results
+
+      - name: Cache the AVD
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+          key: avd-v2-${{ runner.os }}-${{ inputs.api-level }}-${{ env.TARGET }}-${{ env.ARCH }}
+
+      - name: Create the AVD snapshot (cache miss)
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ inputs.api-level }}
+          target: ${{ env.TARGET }}
+          arch: ${{ env.ARCH }}
+          force-avd-creation: false
+          emulator-options: ${{ env.AVD_OPTIONS }}
+          disable-animations: false
+          script: echo "AVD snapshot created"
+
+      - name: Full integration suite
+        if: inputs.suite == 'full'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ inputs.api-level }}
+          target: ${{ env.TARGET }}
+          arch: ${{ env.ARCH }}
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save ${{ env.AVD_OPTIONS }}
+          disable-animations: true
+          script: |
+            uv run python -c "from geppetto.core.adb import AdbClient, wait_for_boot; wait_for_boot(AdbClient('emulator-5554'), timeout=60)"
+            uv run pytest integration -v --serial emulator-5554 --geppetto-artifacts=on-failure --geppetto-output=integration-results --basetemp=integration-results/tmp --junitxml=integration-results/junit.xml
+
+      - name: Minimum-version smoke
+        if: inputs.suite == 'smoke'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ inputs.api-level }}
+          target: ${{ env.TARGET }}
+          arch: ${{ env.ARCH }}
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save ${{ env.AVD_OPTIONS }}
+          disable-animations: true
+          script: |
+            uv run python -c "from geppetto.core.adb import AdbClient, wait_for_boot; wait_for_boot(AdbClient('emulator-5554'), timeout=60)"
+            uv run pytest integration/test_adb_real.py integration/test_device_real.py integration/test_cli_real.py integration/test_plugin_real.py -v --serial emulator-5554 --geppetto-artifacts=on-failure --geppetto-output=integration-results --basetemp=integration-results/tmp --junitxml=integration-results/junit.xml
+
+      - name: Require executed tests
+        if: always()
+        run: uv run python scripts/check_integration.py integration-results/junit.xml
+
+      - name: Upload reports and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-results-api${{ inputs.api-level }}-${{ inputs.suite }}
+          path: integration-results/
+          retention-days: 7

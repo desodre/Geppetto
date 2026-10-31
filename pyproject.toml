@@ -69,7 +69,7 @@ geppetto = "geppetto.pytest_plugin"
 Homepage = "https://github.com/desodre/geppetto"
 Repository = "https://github.com/desodre/geppetto"
 Issues = "https://github.com/desodre/geppetto/issues"
-Documentation = "https://github.com/desodre/geppetto#readme"
+Documentation = "https://desodre.github.io/Geppetto/"
 
 [tool.hatch.version]
 path = "src/geppetto/__init__.py"
@@ -83,6 +83,11 @@ dev = [
     "pytest>=9.0.3",
     "pytest-html>=4.1.1",
     "ruff>=0.15.12",
+]
+docs = [
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.7,<10",
+    "mkdocstrings[python]>=1.0,<2",
 ]
 
 [tool.ruff]

@@ -1,0 +1,57 @@
+site_name: Geppetto
+site_description: Typed Python automation for Android device labs
+site_url: https://desodre.github.io/Geppetto/
+repo_url: https://github.com/desodre/Geppetto
+repo_name: desodre/Geppetto
+edit_uri: edit/main/docs/
+strict: true
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - content.code.copy
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            allow_inspection: false
+            show_source: false
+            show_signature_annotations: true
+            show_root_heading: true
+            members_order: source
+            docstring_style: google
+markdown_extensions:
+  - admonition
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Guides:
+      - pytest: guides/pytest.md
+      - Command line: guides/cli.md
+      - Inspector: guides/inspector.md
+      - Logcat and crashes: guides/logcat-and-crashes.md
+  - Recipes:
+      - Login: recipes/login.md
+      - Boot time: recipes/boot-time.md
+      - Two devices: recipes/two-devices.md
+      - Failure artifacts: recipes/failure-artifacts.md
+  - API reference:
+      - Device: reference/device.md
+      - UI and models: reference/ui-and-models.md
+      - Transport and services: reference/transport-and-services.md
+      - Recording and logcat: reference/recording-and-logcat.md
+      - Inspector: reference/inspector.md
+      - Optional features: reference/optional-features.md
+      - Exceptions: reference/exceptions.md
+  - Project:
+      - Versioning and support: policies/versioning.md
+      - Contributing: contributing.md
+      - Changelog: changelog.md

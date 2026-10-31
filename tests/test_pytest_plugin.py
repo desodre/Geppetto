@@ -8,6 +8,37 @@ from geppetto.core import adb as adb_module
 
 pytest_plugins = ["pytester"]
 
+
+def test_recent_logcat_accepts_nanoseconds_without_a_width_modifier(device, adb_run):
+    from geppetto.pytest_plugin import _Capture, _recent_logcat
+
+    adb_run.responder = lambda argv: (
+        "1800000010.123456789" if argv[-1] == "date +%s.%N" else "recent device logs"
+    )
+    capture = _Capture(device, started_at=1800000000.0)
+    assert _recent_logcat(capture, seconds=2) == "recent device logs"
+    assert adb_run.shell_lines() == [
+        "date +%s.%N",
+        "logcat -d -v threadtime -T 1800000008.123",
+    ]
+
+
+@pytest.mark.parametrize("raw", ["1800000010.N", "1800000010.3N"])
+def test_recent_logcat_falls_back_to_seconds_on_older_android(device, adb_run, raw):
+    from geppetto.pytest_plugin import _Capture, _recent_logcat
+
+    responses = {
+        "date +%s.%N": raw,
+        "date +%s": "1800000010",
+        "logcat -d -v threadtime -T 1800000008.000": "recent device logs",
+    }
+    adb_run.responder = lambda argv: responses[argv[-1]]
+    assert _recent_logcat(_Capture(device, started_at=1800000000.0), seconds=2) == (
+        "recent device logs"
+    )
+    assert adb_run.shell_lines() == list(responses)
+
+
 #: conftest for the inner runs: a Device built without hardware.
 CONFTEST = """
 import logging
@@ -34,7 +65,7 @@ class FakeAdb:
 
     def shell(self, command):
         CALLS.append(command)
-        if command == ["date", "+%s.%3N"]:
+        if command == ["date", "+%s.%N"]:
             self.date_reads += 1
             return f"{1800000000 + self.date_reads * 10}.000"
         if command[:2] == ["logcat", "-d"]:

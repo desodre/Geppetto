@@ -90,7 +90,8 @@ analyzers, hardware: optional, imported lazily from geppetto/__init__.py
    `__getattr__` in `__init__.py`, declare in `pyproject.toml` (extra **and** `all`).
 6. **Public API is a contract.** Anything exported in `__all__` or documented in the README keeps
    working for at least one minor release after a deprecation (`DeprecationWarning` + CHANGELOG).
-   Aliases are fine (`Direction.Up` → `Direction.UP`).
+   Remove only in a major release. See [CONTRIBUTING.md](CONTRIBUTING.md) for the full policy.
+   Aliases are fine (`Direction.Up` → `Direction.UP`). `_deprecation.warn_deprecated` is internal.
 7. **Waits are bounded.** Every wait has a timeout, uses `time.monotonic()`, and raises
    `DeviceTimeoutError` (never loops forever, never `datetime` arithmetic).
 8. **Types are strict.** `mypy --strict` must stay clean; no `Any` leaking out of public functions;
@@ -108,11 +109,15 @@ analyzers, hardware: optional, imported lazily from geppetto/__init__.py
 - Public APIs have docstrings saying what they return and which `GeppettoError` they raise.
 - README/docs updated when usage changes; CHANGELOG updated; AGENTS.md updated when rules or
   architecture change.
-- CI is green. `ci.yml` (main, and called by the publish) runs lint, format, mypy and unit tests
-  on Python 3.12/3.13. `dev.yml` (push/PR to `dev`) runs those unit tests on one runner and the
-  `integration/` suite on an Android emulator (API 34, KVM, cached AVD) on another; failure
-  artifacts are uploaded. Publishing to PyPI runs `ci.yml` first and requires the tag `vX.Y.Z` to
-  equal `__version__`.
+- CI is green. `ci.yml` runs lint, format, mypy and unit tests on Python 3.12/3.13 and calls
+  `integration.yml` for API 34 emulator tests on every PR/push to main. `dev.yml` reuses it
+  without a second emulator job. Integration requires a ready serial and a nonempty JUnit
+  report with executed tests; reports and failure artifacts are uploaded. Publishing also
+  requires the API 26 smoke and the tag `vX.Y.Z` to equal `__version__`.
+- Documentation builds with `uv run --group docs mkdocs build --strict`, using static sources
+  (no device or optional hardware imports). `docs.yml` builds PRs and publishes Pages only
+  from main. CONTRIBUTING and CHANGELOG are included as canonical sources. Executable recipes
+  live in `examples/recipes`; keep their included code and commands working.
 - Behaviour that only a real device proves (UI hierarchy, recording, the plugin's artifacts, CLI
   output) gets an `integration/` test too.
 
@@ -137,6 +142,7 @@ uv run pytest integration --serial emulator-5554 --geppetto-artifacts=on-failure
 uv run ruff check src tests && uv run ruff format src tests
 uv run mypy src
 uv build                                # wheel + sdist (version read from __init__.py)
+uv run --group docs mkdocs build --strict # docs, no device or library extras needed
 ```
 
 If the machine has no Python 3.12, `UV_PYTHON=3.14 uv sync --group dev` works locally; CI covers

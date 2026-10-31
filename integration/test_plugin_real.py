@@ -17,6 +17,7 @@ def test_failure_artifacts_are_real(pytester, serial, tmp_path):
         serial,
         "--geppetto-output",
         str(tmp_path),
+        "--geppetto-artifacts=on-failure",
         "--junitxml=junit.xml",
         "--html=report.html",
         "--self-contained-html",

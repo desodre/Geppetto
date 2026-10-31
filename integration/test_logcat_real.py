@@ -52,7 +52,13 @@ def test_plugin_fails_a_passing_test_when_the_app_crashes(pytester, serial, tmp_
         """
     )
     result = pytester.runpytest(
-        "--serial", serial, "--geppetto-watch", SETTINGS, "--geppetto-output", str(tmp_path)
+        "--serial",
+        serial,
+        "--geppetto-watch",
+        SETTINGS,
+        "--geppetto-output",
+        str(tmp_path),
+        "--geppetto-artifacts=on-failure",
     )
     result.assert_outcomes(failed=1)
     result.stdout.fnmatch_lines(["*App crashed during the test*"])

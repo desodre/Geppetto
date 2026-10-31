@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Added
+- Documentation site with a static API reference, typed examples and executable recipes for
+  login, emulator boot time, two devices and failure artifacts; GitHub Pages deploys from main.
+- CONTRIBUTING documents SemVer, deprecation and tested Python/Android environments; an internal
+  warning helper keeps future deprecations consistent without changing existing aliases.
 - **`geppetto inspect`**: the device screen in the browser with hover highlight, element attributes
   and the recommended selector (unique in the dump, stable attributes first, position-based ones
   flagged as fragile); **Record** mode taps/types/presses keys on the device and builds a runnable
@@ -19,10 +23,14 @@
   `crash.txt` to the artifacts.
 
 ### Fixed
+- Pytest logcat artifacts fall back to second-resolution device time on older Android builds
+  without fractional `date` formats, including API 26.
 - Inspector: clickable rows without attributes of their own (the usual Android list item) get a
   stable selector through their label instead of a fragile position.
 
 ### Changed
+- API 34 emulator integration now runs for every PR to main and is reused by dev. Release
+  validation also requires the API 26 compatibility smoke; empty/all-skipped reports fail.
 - GitHub Actions closes referenced issues and their sub-issues after commits or PRs land on `main`.
 - The pytest `device` fixture now has function scope while reusing its connection for the session.
   A test using only `device` captures artifacts only from its selected serial.
