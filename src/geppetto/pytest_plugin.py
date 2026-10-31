@@ -265,10 +265,19 @@ def _save(capture: _Capture, name: str, write: Callable[[Path], object]) -> None
         logger.warning("Could not save %s for %s: %s", name, capture.device.serial, erro)
 
 
+def _device_time(device: Device) -> float:
+    """Use fractional time when supported; older Android date only exposes seconds."""
+    raw = device.adb.shell(["date", "+%s.%N"]).strip()
+    try:
+        return float(raw)
+    except ValueError:
+        return float(device.adb.shell(["date", "+%s"]).strip())
+
+
 def _recent_logcat(capture: _Capture, seconds: float) -> str:
     if capture.started_at is None:
         raise RuntimeError("Could not read device time before the test")
-    now = float(capture.device.adb.shell(["date", "+%s.%3N"]).strip())
+    now = _device_time(capture.device)
     since = max(capture.started_at, now - seconds)
     return capture.device.adb.shell(["logcat", "-d", "-v", "threadtime", "-T", f"{since:.3f}"])
 
@@ -329,7 +338,7 @@ def _geppetto_capture(request: pytest.FixtureRequest) -> Generator[None]:
             captures.append(capture)
             continue
         try:
-            started_at = float(dev.adb.shell(["date", "+%s.%3N"]).strip())
+            started_at = _device_time(dev)
         except Exception as erro:  # noqa: BLE001
             started_at = None
             logger.warning("Could not read device time on %s: %s", dev.serial, erro)

@@ -25,3 +25,5 @@ xfail and fixture teardown failures. See the [artifact recipe](../recipes/failur
 Options include `--geppetto-output DIR`, `--geppetto-artifacts on-failure|always|never`,
 `--geppetto-logcat-seconds N` and `--no-geppetto-record`. Output and artifact mode also have
 `geppetto_output` and `geppetto_artifacts` ini settings.
+On older builds such as API 26, device timestamps have one-second precision, so the capture
+boundary can include lines from the same second just before the test starts.

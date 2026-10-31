@@ -9,6 +9,9 @@ geppetto emulator list
 uv run python examples/recipes/boot_time.py My_AVD
 ```
 
+Use `--gpu host` when a working host GPU is available, or `--gpu swiftshader` for software
+rendering. The default is `auto`; renderer compatibility depends on the host/emulator build.
+
 ```python
 --8<-- "examples/recipes/boot_time.py"
 ```

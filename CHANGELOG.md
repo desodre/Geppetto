@@ -23,6 +23,8 @@
   `crash.txt` to the artifacts.
 
 ### Fixed
+- Pytest logcat artifacts fall back to second-resolution device time on older Android builds
+  without fractional `date` formats, including API 26.
 - Inspector: clickable rows without attributes of their own (the usual Android list item) get a
   stable selector through their label instead of a fragile position.
 
