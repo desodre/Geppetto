@@ -21,3 +21,4 @@ examples/pytest/report.html
 site/
 integration-results/
 recipe-results/
+/results/
