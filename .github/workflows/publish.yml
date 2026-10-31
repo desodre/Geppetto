@@ -10,9 +10,16 @@ jobs:
     name: CI checks
     uses: ./.github/workflows/ci.yml
 
+  minimum-android:
+    name: Minimum supported Android
+    uses: ./.github/workflows/integration.yml
+    with:
+      api-level: 26
+      suite: smoke
+
   build:
     name: Build distribution
-    needs: checks
+    needs: [checks, minimum-android]
     runs-on: ubuntu-latest
 
     steps:
