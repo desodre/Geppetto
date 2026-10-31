@@ -21,8 +21,9 @@ uv run pytest examples/recipes/failure_artifacts.py --serial emulator-5554 \
 | `crash.txt` | Watched crash details when crash monitoring is configured |
 
 Folders live under `<output>/<run>_<serial>/Tests/<test id>/`. JUnit records
-`geppetto_artifacts[<serial>]`; pytest-html links other artifacts. Keep the output folder
-when sharing a report because links to external files are not embedded videos/XML/logs.
+`geppetto_artifacts[<serial>]`; pytest-html links other artifacts. Only the screenshot is
+embedded. Other links refer to local paths on the machine that ran the test; when sharing,
+send the artifact files too and open them directly or update the links for their new location.
 
 Use `--no-geppetto-record` to disable video, `--geppetto-logcat-seconds N` to change the
 window, or `--geppetto-artifacts=always|never`. An artifact error produces an error file
