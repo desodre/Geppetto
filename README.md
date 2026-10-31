@@ -249,6 +249,8 @@ Publishing is a `vX.Y.Z` tag that matches it; CI must pass first.
 
 ## Links
 
+- Documentation: https://desodre.github.io/Geppetto/
+
 - Homepage: https://github.com/desodre/geppetto
 - Repository: https://github.com/desodre/geppetto
 - Issues: https://github.com/desodre/geppetto/issues
