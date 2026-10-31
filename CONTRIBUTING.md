@@ -86,13 +86,13 @@ to work without new warnings; this policy does not deprecate additional APIs.
 | Python below 3.12 | Unsupported; rejected by package metadata |
 | Newer Python | Not yet certified; `>=3.12` metadata is not a guarantee about future releases |
 | Android API 34 / Android 14 | Full integration target on Linux x86_64 emulators |
-| Android API 26 / Android 8 | Proposed minimum; compatibility smoke required before release certification |
+| Android API 26 / Android 8 | Supported minimum; compatibility smoke, repeated before releases |
 | Other Android API 26+ builds | Intended compatibility; only the listed matrix has automated evidence |
 | OEM devices, other host OSes | Report compatibility with model/build/tool versions; not certified by the emulator job |
 | Fastboot, root, hardware | Require matching device capabilities and optional dependencies; outside the emulator guarantee |
 
-Do not announce API 26 certification until its smoke run succeeds. The integration
-workflow supports manual API 26 smoke runs; publication requires that job to pass.
+API 26 was validated with the 13-test compatibility smoke; API 34 runs the full suite.
+The integration workflow supports manual API 26 smoke runs; publication requires that job to pass.
 Device permissions, OEM restrictions and optional extras may limit individual features.
 Crash-injection tests using `am crash` require Android 13+ and are not part of the
 API 26 smoke; parsing crash logs itself does not require Android 13.
