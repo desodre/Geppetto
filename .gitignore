@@ -17,3 +17,7 @@ wheels/
 /logs/
 examples/pytest/results/
 examples/pytest/report.html
+
+site/
+integration-results/
+recipe-results/

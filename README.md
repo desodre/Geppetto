@@ -20,6 +20,9 @@ Just as Geppetto brought Pinocchio to life, this tool brings your Android tests 
 - Android SDK platform tools (`adb`, optional `fastboot`) available on PATH
 - Android device or emulator with ADB enabled
 
+See [versioning and support](CONTRIBUTING.md#versioning-and-public-api) for the tested matrix,
+deprecation guarantees and release process. The package includes `py.typed` for type checkers.
+
 ## Installation
 
 ### pip
@@ -232,8 +235,14 @@ uv run pytest          # no device needed: adb is replaced by a recorder
 uv run pytest integration --serial emulator-5554 --geppetto-artifacts=on-failure
 ```
 
-CI: pushes and PRs to `dev` run the unit tests and, on a separate runner, the integration tests on
-an Android emulator (`.github/workflows/dev.yml`); `main` and the PyPI publish run `ci.yml`.
+CI: every PR/push to `main` runs Python 3.12/3.13 checks and API 34 emulator integration.
+`dev` reuses this pipeline. Publishing also requires the API 26 compatibility smoke.
+Empty or entirely skipped integration runs fail. See [CONTRIBUTING](CONTRIBUTING.md).
+
+Build the documentation with `uv run --group docs mkdocs build --strict`, or preview it with
+`uv run --group docs mkdocs serve`. Docs build from static sources without a device or extras.
+The site follows main and labels unreleased features; its four recipes cover login, boot time,
+two devices and failure artifacts. Pages deployment runs only from main.
 
 The version lives only in `src/geppetto/__init__.py` (`__version__`); `pyproject.toml` reads it.
 Publishing is a `vX.Y.Z` tag that matches it; CI must pass first.
