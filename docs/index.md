@@ -17,6 +17,7 @@ labs, boot state and OS features.
 ## Practical workflows
 
 - [pytest fixtures and automatic failure artifacts](guides/pytest.md)
+- [Locators, auto-waiting actions and `expect()` assertions](guides/locators.md)
 - [Screen inspection and recording Python code](guides/inspector.md)
 - [Live logcat and watched crashes](guides/logcat-and-crashes.md)
 - [Two-device tests](recipes/two-devices.md)

@@ -4,7 +4,7 @@ These APIs are described by main; see the changelog for release availability.
 
 ```python
 with device.logcat(tags=["Payments"], level="I") as log:
-    device.click(device.await_widget(By.TEXT, "Pay"))
+    device.get(By.TEXT, "Pay").click()
     log.expect("Payment OK", timeout=10)
     log.expect_no("Exception", within=2)
 
