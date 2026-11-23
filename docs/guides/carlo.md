@@ -37,8 +37,18 @@ from geppetto import By, Device
 
 with Device("emulator-5554", backend="carlo") as device:
     device.click(device.await_widget(By.TEXT, "Login"))
-    print(device.screen_size)  # from `wm size`, override size first
+    print(device.screen_size)  # `wm size` (override first), swapped in landscape
 ```
+
+`screen_size` follows the rotation: Geppetto reads `wm size` and the `SurfaceOrientation` line of
+`dumpsys input` in one shell call and swaps width and height at 90° or 270°. When the rotation
+cannot be read it falls back to the natural orientation from `wm size`.
+
+Carlo exits after 30 s without a request. When a hierarchy dump then finds the connection
+`closed` (or failing with `io`), the session is cleaned up, restarted once in a new directory
+and the dump retried. Agent refusals (`unavailable`, `conflict`, `truncated`…) and `timeout`
+are never retried. Pass `auto_reconnect=False` to `CarloSession` or `CarloBackend` to get the
+error instead.
 
 `carlo_binary="/path/to/carlo"` overrides `GEPPETTO_CARLO_BINARY`. Leaving the `with` block
 (or calling `device.close()`) ends the session: Geppetto asks the agent to shut down, removes

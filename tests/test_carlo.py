@@ -41,6 +41,7 @@ from geppetto.core.carlo import (
     decode_video_packet,
     encode_frame,
     encode_video_packet,
+    parse_surface_orientation,
     parse_wm_size,
     read_frame,
 )
@@ -57,6 +58,7 @@ PACKETS = json.loads((FIXTURES / "video_packets.json").read_text())["packets"]
 TOKEN = "0123456789abcdef" * 2
 ABSTRACT_NAME = "carlo-" + "ab" * 16
 SERIAL = "SERIAL123"
+WINDOW_SIZE = "wm size; dumpsys input | grep -m1 SurfaceOrientation || true"
 
 
 class OneByteReader:
@@ -212,6 +214,26 @@ def test_parse_wm_size_physical():
 def test_parse_wm_size_prefers_the_override():
     output = "Physical size: 1080x2340\nOverride size: 720x1560\n"
     assert parse_wm_size(output) == (720, 1560)
+
+
+@pytest.mark.parametrize(
+    ("output", "orientation"),
+    [
+        ("Physical size: 1080x2340\n    SurfaceOrientation: 0\n", 0),
+        ("      SurfaceOrientation: 1\n", 1),
+        ("SurfaceOrientation: 2", 2),
+        ("SurfaceOrientation:3\n", 3),
+        ("  mCurrentRotation=ROTATION_0\n", 0),
+        ("mCurrentRotation=ROTATION_90", 1),
+        ("mCurrentRotation=ROTATION_180 mLastOrientation=-1", 2),
+        ("mCurrentRotation=ROTATION_270\n", 3),
+        ("Physical size: 1080x2340\n", None),
+        ("", None),
+        ("SurfaceOrientation: 7\nmCurrentRotation=ROTATION_45", None),
+    ],
+)
+def test_parse_surface_orientation(output, orientation):
+    assert parse_surface_orientation(output) == orientation
 
 
 @pytest.mark.parametrize("output", ["", "error: no devices", "Physical size: unknown"])
@@ -493,7 +515,11 @@ class FakeProcess:
 
 
 class AgentServer:
-    """A loopback TCP port standing in for ``adb forward``; serves one fake agent."""
+    """A loopback TCP port standing in for ``adb forward``; one fake agent per connection.
+
+    Every agent shares :attr:`replies` and :attr:`requests`, so a reconnected session keeps
+    the same answers and its commands follow the previous connection's.
+    """
 
     def __init__(self) -> None:
         self.listener = socket.create_server(("127.0.0.1", 0))
@@ -503,11 +529,12 @@ class AgentServer:
         threading.Thread(target=self._accept, daemon=True).start()
 
     def _accept(self) -> None:
-        try:
-            conn, _ = self.listener.accept()
-        except OSError:
-            return
-        FakeAgent(conn, self.replies, self.requests)
+        while True:
+            try:
+                conn, _ = self.listener.accept()
+            except OSError:
+                return
+            FakeAgent(conn, self.replies, self.requests)
 
     @property
     def commands(self) -> list[object]:
@@ -552,7 +579,7 @@ class CarloHarness:
             if self.forward_error is not None:
                 raise self.forward_error
             return f"{self.server.port}\n"
-        if argv[3:] == ["shell", "wm size"]:
+        if argv[3:] == ["shell", WINDOW_SIZE]:
             return self.wm_size
         return ""
 
@@ -775,6 +802,161 @@ def test_session_token_and_hierarchy_never_reach_the_logs(carlo, adb, caplog):
     assert "Don't allow" not in caplog.text
 
 
+# ── Auto-reconnect ───────────────────────────────────────────────────
+
+
+def _dumps_after_closing(times: int) -> Reply:
+    """``hierarchy.dump`` closes the connection *times* times (idle exit), then answers."""
+    remaining = [times]
+
+    def reply(rid: int) -> bytes | None:
+        if remaining[0] > 0:
+            remaining[0] -= 1
+            return None
+        return hierarchy(DUMP)(rid)
+
+    return reply
+
+
+def _fail_dump(monkeypatch: pytest.MonkeyPatch, session: CarloSession, code: str) -> None:
+    """Make the current client's next ``hierarchy_dump`` raise *code* (a new client won't)."""
+
+    def lost() -> str:
+        raise CarloError(f"simulated {code}", code=code)
+
+    monkeypatch.setattr(session.client, "hierarchy_dump", lost)
+
+
+def test_dump_reconnects_once_after_carlo_went_idle(carlo, adb):
+    carlo.server.replies["hierarchy.dump"] = _dumps_after_closing(1)
+    session = CarloSession(adb, carlo.binary).start()
+    old_dir, old_port = session.session_dir, session.port
+    carlo.adb_run.calls.clear()
+
+    assert session.dump_hierarchy() == DUMP
+
+    new_dir = session.session_dir
+    assert new_dir != old_dir
+    assert new_dir.startswith("/data/local/tmp/geppetto-carlo-")
+    assert session.remote_binary == f"{new_dir}/carlo"
+    assert carlo.calls == [
+        *_cleanup_calls(old_dir, old_port),
+        ["adb", "-s", SERIAL, "shell", f"mkdir -m 700 {new_dir}"],
+        ["adb", "-s", SERIAL, "push", str(carlo.binary), f"{new_dir}/carlo"],
+        ["adb", "-s", SERIAL, "shell", f"chmod 700 {new_dir}/carlo"],
+        ["adb", "-s", SERIAL, "forward", "tcp:0", f"localfilesystem:{new_dir}/control.sock"],
+    ]
+    assert [shlex.split(argv[4])[-1] for argv in carlo.popen_argv] == [old_dir, new_dir]
+    assert carlo.processes[0].stdout.closed
+    assert carlo.server.commands == ["hello", "hierarchy.dump", "hello", "hierarchy.dump"]
+
+    new_port = session.port
+    carlo.adb_run.calls.clear()
+    session.close()
+    assert carlo.calls == _cleanup_calls(new_dir, new_port)
+    assert carlo.server.commands[-1] == "shutdown"
+    carlo.adb_run.calls.clear()
+    session.close()  # still idempotent after a reconnect
+    assert carlo.calls == []
+
+
+@pytest.mark.parametrize("code", ["closed", "io"])
+def test_dump_reconnects_on_transport_errors(carlo, adb, monkeypatch, code):
+    session = CarloSession(adb, carlo.binary, sha256=_sha256(carlo.binary)).start()
+    old_dir = session.session_dir
+    _fail_dump(monkeypatch, session, code)
+
+    assert session.dump_hierarchy() == DUMP
+    assert session.session_dir != old_dir
+    assert ["adb", "-s", SERIAL, "shell", f"rm -rf {old_dir}"] in carlo.calls
+    assert len(carlo.popen_argv) == 2
+    session.close()
+
+
+def test_dump_reconnects_only_once(carlo, adb):
+    carlo.server.replies["hierarchy.dump"] = _dumps_after_closing(2)
+    session = CarloSession(adb, carlo.binary).start()
+    with pytest.raises(CarloError) as raised:
+        session.dump_hierarchy()
+    assert raised.value.code == "closed"
+    assert len(carlo.popen_argv) == 2
+    session.close()
+
+
+def test_failed_restart_cleans_up_and_close_has_nothing_left(carlo, adb):
+    carlo.server.replies["hierarchy.dump"] = _dumps_after_closing(1)
+    session = CarloSession(adb, carlo.binary).start()
+    carlo.forward_error = subprocess.CalledProcessError(1, "adb forward")
+    with pytest.raises(CarloError) as raised:
+        session.dump_hierarchy()
+    assert raised.value.code == "adb"
+    assert carlo.calls[-1] == ["adb", "-s", SERIAL, "shell", f"rm -rf {session.session_dir}"]
+    assert all(p.stdout.closed for p in carlo.processes)
+
+    carlo.adb_run.calls.clear()
+    session.close()
+    assert carlo.calls == []
+    with pytest.raises(CarloError) as raised:
+        session.dump_hierarchy()
+    assert raised.value.code == "not_started"
+
+
+def test_auto_reconnect_off_raises_the_transport_error(carlo, adb):
+    carlo.server.replies["hierarchy.dump"] = _dumps_after_closing(1)
+    session = CarloSession(adb, carlo.binary, auto_reconnect=False).start()
+    old_dir = session.session_dir
+    with pytest.raises(CarloError) as raised:
+        session.dump_hierarchy()
+    assert raised.value.code == "closed"
+    assert session.session_dir == old_dir
+    assert len(carlo.popen_argv) == 1
+    session.close()
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "unavailable",
+        "conflict",
+        "truncated",
+        "unsupported_node",
+        "inconsistent_snapshot",
+        "invalid_window_list",
+    ],
+)
+def test_agent_refusals_never_reconnect(carlo, adb, code):
+    carlo.server.replies["hierarchy.dump"] = lambda rid: refused(rid, code)
+    session = CarloSession(adb, carlo.binary).start()
+    old_dir = session.session_dir
+    with pytest.raises(CarloError) as raised:
+        session.dump_hierarchy()
+    assert raised.value.code == code
+    assert session.session_dir == old_dir
+    assert len(carlo.popen_argv) == 1
+    session.close()
+
+
+def test_timeout_never_reconnects(carlo, adb, monkeypatch):
+    session = CarloSession(adb, carlo.binary).start()
+    _fail_dump(monkeypatch, session, "timeout")
+    with pytest.raises(CarloError) as raised:
+        session.dump_hierarchy()
+    assert raised.value.code == "timeout"
+    assert len(carlo.popen_argv) == 1
+    session.close()
+
+
+def test_reconnect_never_logs_the_token(carlo, adb, caplog):
+    caplog.set_level(logging.DEBUG, logger="geppetto")
+    carlo.server.replies["hierarchy.dump"] = _dumps_after_closing(1)
+    session = CarloSession(adb, carlo.binary).start()
+    session.dump_hierarchy()
+    session.close()
+    assert "restarting the session once" in caplog.text
+    assert TOKEN not in caplog.text
+    assert "<hierarchy" not in caplog.text
+
+
 # ── Device(backend="carlo") ──────────────────────────────────────────
 
 
@@ -806,7 +988,29 @@ def test_carlo_device_window_size_comes_from_wm_size(carlo, carlo_device):
     assert carlo_device.screen_size == (1080, 2340)
     carlo.wm_size = "Physical size: 1080x2340\nOverride size: 720x1560\n"
     assert carlo_device.screen_size == (720, 1560)
-    assert ["adb", "-s", SERIAL, "shell", "wm size"] in carlo.calls
+    assert ["adb", "-s", SERIAL, "shell", WINDOW_SIZE] in carlo.calls
+
+
+@pytest.mark.parametrize(
+    ("rotation", "size"),
+    [
+        ("      SurfaceOrientation: 0\n", (1080, 2340)),
+        ("      SurfaceOrientation: 2\n", (1080, 2340)),
+        ("      SurfaceOrientation: 1\n", (2340, 1080)),
+        ("      SurfaceOrientation: 3\n", (2340, 1080)),
+        ("  mCurrentRotation=ROTATION_90\n", (2340, 1080)),
+        ("  mCurrentRotation=ROTATION_180\n", (1080, 2340)),
+        ("", (1080, 2340)),  # no orientation line: natural orientation
+    ],
+)
+def test_carlo_device_window_size_follows_the_rotation(carlo, carlo_device, rotation, size):
+    carlo.wm_size = "Physical size: 1080x2340\n" + rotation
+    assert carlo_device.screen_size == size
+
+
+def test_carlo_window_size_swaps_the_override_in_landscape(carlo, carlo_device):
+    carlo.wm_size = "Physical size: 1080x2340\nOverride size: 720x1560\nSurfaceOrientation: 1\n"
+    assert carlo_device.screen_size == (1560, 720)
 
 
 @pytest.mark.parametrize(
@@ -835,6 +1039,21 @@ def test_carlo_device_refusal_raises_carlo_error(carlo, carlo_device):
     with pytest.raises(CarloError) as raised:
         carlo_device.get_window_dump()
     assert raised.value.code == "unavailable"
+    assert len(carlo.popen_argv) == 1
+
+
+def test_carlo_device_survives_the_idle_exit(carlo, carlo_device):
+    carlo.server.replies["hierarchy.dump"] = _dumps_after_closing(1)
+    assert carlo_device.get_window_dump().find_widget(By.TEXT, "Login").id == "com.app:id/login"
+    assert len(carlo.popen_argv) == 2
+
+
+@pytest.mark.parametrize("auto_reconnect", [True, False])
+def test_carlo_backend_passes_auto_reconnect(carlo, adb, auto_reconnect):
+    backend = CarloBackend(adb, carlo.binary, auto_reconnect=auto_reconnect)
+    assert backend.session.auto_reconnect is auto_reconnect
+    assert backend.dump_hierarchy() == DUMP
+    backend.close()
 
 
 def test_device_context_manager_closes_the_session(carlo, tmp_path, monkeypatch):

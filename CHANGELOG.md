@@ -27,6 +27,10 @@
   `CarloControlClient`, `CarloSession`) and `geppetto.core.backend` (`UiBackend`,
   `create_backend`); errors are `CarloError` with a stable `code`. Host-tested only; Carlo's
   pinned profile is API 36, API 34 is pending.
+- Carlo sessions restart once when a hierarchy dump finds Carlo gone (`closed`/`io`, e.g. after
+  its 30 s idle exit); `auto_reconnect=False` on `CarloSession`/`CarloBackend` disables it.
+  `CarloSession.dump_hierarchy()` and `parse_surface_orientation()` are new.
+- The Carlo backend's screen size follows the display rotation (swapped at 90°/270°).
 - `Device.close()` and `with Device(...)`: release the UI backend (ends a Carlo session). The
   pytest plugin closes every device at session end; a failing close is logged, never raised.
 - pytest: `--geppetto-backend` (env `GEPPETTO_BACKEND`) and `--geppetto-carlo-binary`.

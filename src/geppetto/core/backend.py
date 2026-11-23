@@ -12,11 +12,13 @@ from typing import Any, Protocol, cast
 
 from ..exceptions import CarloError
 from .adb import AdbClient
-from .carlo import CarloSession, parse_wm_size
+from .carlo import CarloSession, parse_surface_orientation, parse_wm_size
 
 #: Names accepted by :func:`create_backend` (and ``Device(backend=...)``).
 BACKEND_NAMES = ("uiautomator2", "carlo")
 _WM_SIZE_TIMEOUT = 30.0
+#: Trusted constant: the natural size, then the rotation (the line is absent on some builds).
+_WINDOW_SIZE_COMMAND = "wm size; dumpsys input | grep -m1 SurfaceOrientation || true"
 
 
 class UiBackend(Protocol):
@@ -79,13 +81,16 @@ class Uiautomator2Backend:
 
 
 class CarloBackend:
-    """Backend over a Carlo agent session; the screen size comes from ``wm size``.
+    """Backend over a Carlo agent session; the screen size comes from ``wm size`` and the
+    current display rotation.
 
     Args:
         adb: Transport of the device.
         binary: Local Carlo binary; defaults to ``$GEPPETTO_CARLO_BINARY``.
         sha256: Expected SHA-256 of *binary*.
         hierarchy_timeout: Seconds allowed for each hierarchy dump.
+        auto_reconnect: Restart the session once when Carlo went away (e.g. after its idle
+            deadline); see :meth:`CarloSession.dump_hierarchy`.
 
     Raises:
         CarloError: When the session cannot be started (see :meth:`CarloSession.start`).
@@ -98,10 +103,15 @@ class CarloBackend:
         *,
         sha256: str | None = None,
         hierarchy_timeout: float = 30.0,
+        auto_reconnect: bool = True,
     ) -> None:
         self._adb = adb
         self.session = CarloSession(
-            adb, binary, sha256=sha256, hierarchy_timeout=hierarchy_timeout
+            adb,
+            binary,
+            sha256=sha256,
+            hierarchy_timeout=hierarchy_timeout,
+            auto_reconnect=auto_reconnect,
         ).start()
 
     def dump_hierarchy(self) -> str:
@@ -111,27 +121,32 @@ class CarloBackend:
             The hierarchy XML sent by Carlo.
 
         Raises:
-            CarloError: Carlo refused (e.g. ``unavailable``) or the connection failed.
+            CarloError: Carlo refused (e.g. ``unavailable``) or the connection failed (after
+                one restart when ``auto_reconnect`` is on).
         """
-        return self.session.client.hierarchy_dump()
+        return self.session.dump_hierarchy()
 
     def window_size(self) -> tuple[int, int]:
-        """Screen size from ``adb shell wm size``.
+        """Screen size from ``wm size``, swapped when the display is turned a quarter turn.
 
         Returns:
-            ``(width, height)`` from ``wm size`` (override size first, natural orientation).
+            ``(width, height)`` in the current orientation (override size first). Without a
+            readable rotation, the natural orientation reported by ``wm size``.
 
         Raises:
-            CarloError: ``invalid_wm_size`` when the output cannot be parsed, ``timeout``
-                when ``wm size`` does not answer within 30 s, or ``adb`` when it fails.
+            CarloError: ``invalid_wm_size`` when the size cannot be parsed, ``timeout``
+                when the command does not answer within 30 s, or ``adb`` when it fails.
         """
         try:
-            output = self._adb.shell("wm size", timeout=_WM_SIZE_TIMEOUT)
+            output = self._adb.shell(_WINDOW_SIZE_COMMAND, timeout=_WM_SIZE_TIMEOUT)
         except subprocess.TimeoutExpired as e:
             raise CarloError("adb shell wm size timed out", code="timeout") from e
         except (subprocess.CalledProcessError, OSError) as e:
             raise CarloError("adb shell wm size failed", code="adb") from e
-        return parse_wm_size(output)
+        width, height = parse_wm_size(output)
+        if parse_surface_orientation(output) in (1, 3):
+            return height, width
+        return width, height
 
     def close(self) -> None:
         """End the Carlo session and remove everything it left on the device."""

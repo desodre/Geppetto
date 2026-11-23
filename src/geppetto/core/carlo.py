@@ -63,6 +63,8 @@ _RECV_CHUNK = 64 * 1024
 _EXIT_REASONS = {64: "bad arguments", 69: "session directory or socket refused", 74: "I/O error"}
 #: Seconds allowed for each short adb command of the session (mkdir, chmod, forward, rm).
 _ADB_TIMEOUT = 30.0
+#: Client error codes meaning the agent is gone (e.g. it exited after its idle deadline).
+_RECONNECT_CODES = frozenset({"closed", "io"})
 
 
 class ByteReader(Protocol):
@@ -259,6 +261,25 @@ def parse_wm_size(output: str) -> tuple[int, int]:
     if size is None:
         raise CarloError("Could not read the screen size from `wm size`", code="invalid_wm_size")
     return size
+
+
+def parse_surface_orientation(output: str) -> int | None:
+    """Read the display rotation from ``dumpsys input`` or ``dumpsys window`` output.
+
+    Accepts ``SurfaceOrientation: <0-3>`` (``dumpsys input``) or
+    ``mCurrentRotation=ROTATION_<0|90|180|270>`` (``dumpsys window``).
+
+    Returns:
+        The rotation as a quarter-turn count (``0``–``3``; ``1`` and ``3`` are landscape on a
+        portrait-natural device), or ``None`` when *output* holds neither line.
+    """
+    match = re.search(r"SurfaceOrientation:\s*([0-3])\b", output)
+    if match is not None:
+        return int(match.group(1))
+    match = re.search(r"mCurrentRotation=ROTATION_(0|90|180|270)\b", output)
+    if match is not None:
+        return int(match.group(1)) // 90
+    return None
 
 
 def _json_payload(payload: bytes) -> JsonObject:
@@ -587,6 +608,10 @@ class CarloSession:
     :meth:`close` ends the session and removes the forward, the process and the directory.
     Usable as a context manager.
 
+    Carlo exits by itself after an idle deadline (30 s without a client request). With
+    *auto_reconnect*, :meth:`dump_hierarchy` then cleans the old session up and starts a fresh
+    one (in a new directory) once before retrying.
+
     Args:
         adb: Transport of the target device.
         binary: Local Carlo binary for the device's ABI; defaults to ``$GEPPETTO_CARLO_BINARY``.
@@ -594,6 +619,8 @@ class CarloSession:
         startup_timeout: Seconds allowed for the ready line and for connecting.
         request_timeout: Seconds allowed for each control request.
         hierarchy_timeout: Seconds allowed for ``hierarchy.dump``.
+        auto_reconnect: Restart the session once when :meth:`dump_hierarchy` finds the
+            connection ``closed`` or failing with ``io``.
     """
 
     def __init__(
@@ -605,6 +632,7 @@ class CarloSession:
         startup_timeout: float = 15.0,
         request_timeout: float = 15.0,
         hierarchy_timeout: float = 30.0,
+        auto_reconnect: bool = True,
     ) -> None:
         self.adb = adb
         self._binary_arg = binary
@@ -612,8 +640,10 @@ class CarloSession:
         self.startup_timeout = startup_timeout
         self.request_timeout = request_timeout
         self.hierarchy_timeout = hierarchy_timeout
-        self.session_dir = f"{REMOTE_ROOT}/geppetto-carlo-{secrets.token_hex(8)}"
-        self.remote_binary = f"{self.session_dir}/carlo"
+        self.auto_reconnect = auto_reconnect
+        self.session_dir = ""
+        self.remote_binary = ""
+        self._new_session_dir()
         self.port: int | None = None
         self.hello_info: JsonObject = {}
         self._dir_created = False
@@ -644,6 +674,38 @@ class CarloSession:
         """
         if self._process is not None or self._client is not None:
             raise CarloError("The Carlo session was already started", code="already_started")
+        self._launch()
+        return self
+
+    def dump_hierarchy(self) -> str:
+        """The current UI hierarchy, restarting the session once if Carlo went away.
+
+        Returns:
+            The hierarchy XML sent by Carlo.
+
+        Raises:
+            CarloError: ``not_started`` before :meth:`start` or after :meth:`close`; the
+                agent's refusal (``unavailable``, ``conflict``, ``truncated``…) or ``timeout``,
+                never retried; ``closed``/``io`` when *auto_reconnect* is off or the retry fails
+                too; any :meth:`start` code when the restart fails (the session is then cleaned
+                up and :meth:`close` has nothing left to do).
+        """
+        try:
+            return self.client.hierarchy_dump()
+        except CarloError as e:
+            if not self.auto_reconnect or e.code not in _RECONNECT_CODES:
+                raise
+            logger.debug("Carlo connection lost (%s); restarting the session once", e.code)
+        self._cleanup()
+        self._new_session_dir()  # mkdir must not collide with a directory left behind
+        self._launch()
+        return self.client.hierarchy_dump()
+
+    def _new_session_dir(self) -> None:
+        self.session_dir = f"{REMOTE_ROOT}/geppetto-carlo-{secrets.token_hex(8)}"
+        self.remote_binary = f"{self.session_dir}/carlo"
+
+    def _launch(self) -> None:
         binary = _resolve_binary(self._binary_arg)
         if self._sha256 is not None:
             _verify_sha256(binary, self._sha256)
@@ -652,7 +714,6 @@ class CarloSession:
         except BaseException:
             self._cleanup()
             raise
-        return self
 
     def _start(self, binary: Path) -> None:
         adb = self.adb
