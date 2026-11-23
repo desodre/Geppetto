@@ -47,7 +47,16 @@ class _Estado:
 
 
 def hierarchy_json(xml: str) -> tuple[list[dict[str, Any]], list[etree._Element]]:
-    """Flatten a UI dump into JSON nodes (pre-order) with bounds and the recommended selector."""
+    """Flatten a UI dump into JSON nodes (pre-order) with bounds and the recommended selector.
+
+    Args:
+        xml: The UI hierarchy XML (uiautomator2 or Carlo dump).
+
+    Returns:
+        The JSON-ready nodes and the matching lxml elements, in the same order. A node whose
+        ``bounds`` are missing or invalid (e.g. inverted, as Carlo emits for off-screen nodes)
+        gets ``"bounds": None``, like :meth:`~geppetto.ui.Widget.from_dict`.
+    """
     root = etree.fromstring(xml.encode("utf-8"))
     elementos = list(root.iter("node"))
     indice = {id(n): i for i, n in enumerate(elementos)}
@@ -57,8 +66,12 @@ def hierarchy_json(xml: str) -> tuple[list[dict[str, Any]], list[etree._Element]
         bounds = node.get("bounds", "")
         caixa = None
         if bounds:
-            b = Bounds(bounds)
-            caixa = [b.x1, b.y1, b.x2, b.y2]
+            try:
+                b = Bounds(bounds)
+            except ValueError:
+                pass
+            else:
+                caixa = [b.x1, b.y1, b.x2, b.y2]
         selector = recommend(root, node)
         saida.append(
             {

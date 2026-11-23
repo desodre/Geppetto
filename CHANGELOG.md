@@ -35,12 +35,16 @@
   pytest plugin closes every device at session end; a failing close is logged, never raised.
 - pytest: `--geppetto-backend` (env `GEPPETTO_BACKEND`) and `--geppetto-carlo-binary`.
 - `geppetto doctor` reports whether a Carlo binary is configured.
+- `geppetto inspect --backend {uiautomator2,carlo} --carlo-binary PATH` (env `GEPPETTO_BACKEND`,
+  `GEPPETTO_CARLO_BINARY`); the device and its Carlo session are closed when the inspector stops.
 
 ### Fixed
 - Pytest logcat artifacts fall back to second-resolution device time on older Android builds
   without fractional `date` formats, including API 26.
 - Inspector: clickable rows without attributes of their own (the usual Android list item) get a
   stable selector through their label instead of a fragile position.
+- Inspector: nodes with invalid or inverted bounds (Carlo's off-screen nodes) get `bounds: null`
+  instead of failing `/api/hierarchy`.
 
 ### Changed
 - API 34 emulator integration now runs for every PR to main and is reused by dev. Release

@@ -1,4 +1,5 @@
 import json
+import types
 
 import pytest
 
@@ -155,3 +156,100 @@ def test_doctor_does_not_fail_when_the_agent_is_missing(monkeypatch):
     )
     doctor.check_ready_device(host.DeviceEntry("S", "device"))
     assert comandos[0].endswith("|| true")  # `ls` of a missing agent exits 1 and failed the check
+
+
+# ── inspect ──────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def inspecao(aparelhos, monkeypatch):
+    """Fake Device and InspectorServer; serve_forever behaves like Ctrl+C."""
+    import geppetto.device
+    import geppetto.inspector
+
+    eventos = {"devices": [], "log": []}
+
+    class FakeDevice:
+        def __init__(self, serial, **kwargs):
+            self.serial = serial
+            eventos["devices"].append((serial, kwargs))
+
+        def close(self):
+            eventos["log"].append("device.close")
+
+    class FakeServer:
+        url = "http://127.0.0.1:1/"
+
+        def __init__(self, device, host, port):
+            self.device = device
+            self.recorder = types.SimpleNamespace(steps=())
+
+        def serve_forever(self):
+            raise KeyboardInterrupt
+
+        def shutdown(self):
+            eventos["log"].append("server.shutdown")
+
+    monkeypatch.setattr(geppetto.device, "Device", FakeDevice)
+    monkeypatch.setattr(geppetto.inspector, "InspectorServer", FakeServer)
+    monkeypatch.delenv("GEPPETTO_BACKEND", raising=False)
+    monkeypatch.delenv("GEPPETTO_CARLO_BINARY", raising=False)
+    return eventos
+
+
+def test_inspect_with_carlo_backend(inspecao, capsys):
+    argv = ["inspect", "--no-browser", "--backend", "carlo", "--carlo-binary", "/tmp/carlo"]
+    assert cli.main(argv) == 0
+    assert len(inspecao["devices"]) == 1
+    serial, kwargs = inspecao["devices"][0]
+    assert serial == "AAA"
+    assert (kwargs["backend"], kwargs["carlo_binary"]) == ("carlo", "/tmp/carlo")
+    out = capsys.readouterr().out
+    assert "Carlo" in out and "uiautomator2" not in out
+    assert inspecao["log"] == ["server.shutdown", "device.close"]
+
+
+def test_inspect_backend_defaults_and_env(inspecao, monkeypatch, capsys):
+    assert cli.main(["inspect", "--no-browser"]) == 0
+    assert inspecao["devices"][-1][1]["backend"] == "uiautomator2"
+    assert inspecao["devices"][-1][1]["carlo_binary"] is None
+    assert "uiautomator2 agent" in capsys.readouterr().out
+
+    monkeypatch.setenv("GEPPETTO_BACKEND", "carlo")
+    monkeypatch.setenv("GEPPETTO_CARLO_BINARY", "/env/carlo")
+    assert cli.main(["inspect", "--no-browser"]) == 0
+    assert inspecao["devices"][-1][1]["backend"] == "carlo"
+    assert inspecao["devices"][-1][1]["carlo_binary"] == "/env/carlo"
+
+    # Command-line options win over the environment.
+    argv = ["inspect", "--no-browser", "--backend", "uiautomator2", "--carlo-binary", "/cli"]
+    assert cli.main(argv) == 0
+    assert inspecao["devices"][-1][1]["backend"] == "uiautomator2"
+    assert inspecao["devices"][-1][1]["carlo_binary"] == "/cli"
+
+
+def test_inspect_rejects_an_invalid_env_backend(inspecao, monkeypatch, capsys):
+    monkeypatch.setenv("GEPPETTO_BACKEND", "appium")
+    assert cli.main(["inspect", "--no-browser"]) == 2
+    assert "GEPPETTO_BACKEND must be one of: uiautomator2, carlo" in capsys.readouterr().err
+    assert inspecao["devices"] == []
+
+
+def test_inspect_rejects_an_invalid_backend_option(inspecao, capsys):
+    with pytest.raises(SystemExit) as saida:
+        cli.main(["inspect", "--backend", "appium"])
+    assert saida.value.code == 2
+    assert inspecao["devices"] == []
+
+
+def test_inspect_closes_the_device_when_the_server_fails(inspecao, monkeypatch, capsys):
+    import geppetto.inspector
+
+    class BrokenServer:
+        def __init__(self, device, host, port):
+            raise OSError("address in use")
+
+    monkeypatch.setattr(geppetto.inspector, "InspectorServer", BrokenServer)
+    with pytest.raises(OSError):
+        cli.main(["inspect", "--no-browser"])
+    assert inspecao["log"] == ["device.close"]

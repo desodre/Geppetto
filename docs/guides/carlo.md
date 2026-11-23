@@ -65,6 +65,16 @@ pytest --serial emulator-5554 --geppetto-backend=carlo --geppetto-carlo-binary=/
 `GEPPETTO_BACKEND=carlo` and `GEPPETTO_CARLO_BINARY` work as well; command-line options win.
 Devices are closed when the session ends, even if one close fails.
 
+## Use it with the inspector
+
+```bash
+geppetto inspect -s emulator-5554 --backend carlo --carlo-binary /path/to/carlo
+```
+
+The same environment variables apply (options win; an unknown `GEPPETTO_BACKEND` exits with
+code 2). The Carlo session is closed when the inspector stops, including on Ctrl+C. Nodes
+with off-screen (inverted) bounds are listed without a highlight box.
+
 ## What happens on the device
 
 1. A private `0700` directory `/data/local/tmp/geppetto-carlo-<random>` is created and the
