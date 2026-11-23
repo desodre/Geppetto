@@ -32,3 +32,16 @@ class LogNotFoundError(GeppettoError):
 
 class AppCrashedError(GeppettoError):
     """The app crashed (Java exception, ANR or native signal) while it was being watched."""
+
+
+class CarloError(GeppettoError):
+    """The Carlo agent could not be started, or broke or refused its protocol.
+
+    Attributes:
+        code: Stable machine-readable reason (a protocol code such as ``"bad_magic"`` or
+            ``"unavailable"``, or a host-side one such as ``"timeout"``), ``None`` if unknown.
+    """
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code

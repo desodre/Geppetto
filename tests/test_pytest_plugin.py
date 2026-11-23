@@ -149,6 +149,8 @@ def test_options_are_registered(pytester):
             "*--all-devices*",
             "*--geppetto-output=DIR*",
             "*--no-geppetto-record*",
+            "*--geppetto-backend*",
+            "*--geppetto-carlo-binary=PATH*",
         ]
     )
 
@@ -494,3 +496,101 @@ def test_crash_of_another_app_is_ignored(pytester, sem_aparelhos):
     pytester.makeconftest(CONFTEST + f"\nLOGCAT = {CRASH!r}\n")
     pytester.makepyfile("def test_ok(device): pass")
     pytester.runpytest("--serial", "S1", "--geppetto-watch", "com.other").assert_outcomes(passed=1)
+
+
+#: conftest whose devices record their ``close()``; ``BROKEN`` fails to close.
+CLOSING_CONFTEST = """
+import pathlib
+import pytest
+
+CLOSED = pathlib.Path(__file__).parent / "closed.txt"
+
+
+class FakeDevice:
+    def __init__(self, serial):
+        self.serial = serial
+
+    def close(self):
+        with CLOSED.open("a") as f:
+            f.write(self.serial + "\\n")
+        if self.serial == "BROKEN":
+            raise RuntimeError("close failed")
+
+
+@pytest.fixture(scope="session")
+def geppetto_device_factory():
+    return FakeDevice
+"""
+
+
+def test_session_end_closes_every_device_even_if_one_close_fails(pytester, sem_aparelhos):
+    pytester.makeconftest(CLOSING_CONFTEST)
+    pytester.makepyfile("def test_um(devices): assert len(devices) == 2")
+    args = ["--serial", "BROKEN", "--serial", "OK", "--geppetto-artifacts=never"]
+    pytester.runpytest(*args).assert_outcomes(passed=1)
+    assert (pytester.path / "closed.txt").read_text().splitlines() == ["BROKEN", "OK"]
+
+
+@pytest.fixture
+def device_kwargs(monkeypatch):
+    """What the default factory passes to ``Device`` (replaced by a recorder)."""
+    calls = []
+
+    class RecordingDevice:
+        def __init__(self, serial, **kwargs):
+            self.serial = serial
+            calls.append(kwargs)
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr("geppetto.device.Device", RecordingDevice)
+    monkeypatch.delenv("GEPPETTO_BACKEND", raising=False)
+    monkeypatch.delenv("GEPPETTO_CARLO_BINARY", raising=False)
+    return calls
+
+
+def _run_with_one_device(pytester, *args):
+    pytester.makepyfile("def test_um(device): pass")
+    out = pytester.path / "out"
+    result = pytester.runpytest(
+        "--serial", "S1", "--geppetto-artifacts=never", "--geppetto-output", str(out), *args
+    )
+    result.assert_outcomes(passed=1)
+    return out
+
+
+def test_default_backend_is_not_passed_to_device(pytester, sem_aparelhos, device_kwargs):
+    out = _run_with_one_device(pytester)
+    assert device_kwargs == [{"output_dir": out}]
+
+
+def test_carlo_backend_and_binary_options(pytester, sem_aparelhos, device_kwargs):
+    out = _run_with_one_device(
+        pytester, "--geppetto-backend=carlo", "--geppetto-carlo-binary=/opt/carlo"
+    )
+    expected = {"output_dir": out, "backend": "carlo", "carlo_binary": "/opt/carlo"}
+    assert device_kwargs == [expected]
+
+
+def test_carlo_backend_from_env(pytester, sem_aparelhos, device_kwargs, monkeypatch):
+    monkeypatch.setenv("GEPPETTO_BACKEND", "carlo")
+    monkeypatch.setenv("GEPPETTO_CARLO_BINARY", "/env/carlo")
+    out = _run_with_one_device(pytester)
+    expected = {"output_dir": out, "backend": "carlo", "carlo_binary": "/env/carlo"}
+    assert device_kwargs == [expected]
+
+
+def test_backend_option_beats_env(pytester, sem_aparelhos, device_kwargs, monkeypatch):
+    monkeypatch.setenv("GEPPETTO_BACKEND", "carlo")
+    out = _run_with_one_device(pytester, "--geppetto-backend=uiautomator2")
+    assert device_kwargs == [{"output_dir": out}]
+
+
+def test_unknown_backend_is_a_usage_error(pytester, monkeypatch):
+    monkeypatch.setenv("GEPPETTO_BACKEND", "appium")
+    result = pytester.runpytest()
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    result.stderr.fnmatch_lines(["*GEPPETTO_BACKEND must be one of: uiautomator2, carlo*"])
+    monkeypatch.delenv("GEPPETTO_BACKEND")
+    assert pytester.runpytest("--geppetto-backend=appium").ret == pytest.ExitCode.USAGE_ERROR

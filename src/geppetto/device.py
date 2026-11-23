@@ -5,12 +5,12 @@ import time
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import cast
-
-from uiautomator2 import Device as U2Device
+from types import TracebackType
+from typing import Any
 
 from ._logging import DeviceLogger
 from .core.adb import AdbClient, wait_for_boot
+from .core.backend import Uiautomator2Backend, UiBackend, create_backend
 from .core.fastboot import FastbootClient
 from .crashes import CrashWatcher
 from .exceptions import DeviceTimeoutError, WidgetNotFoundError
@@ -57,18 +57,31 @@ class Device:
         *,
         log_to_console: bool = True,
         log_to_file: bool = True,
+        backend: str | UiBackend = "uiautomator2",
+        carlo_binary: str | Path | None = None,
     ) -> None:
         """Connect to the device *serial*.
 
+        Args:
+            serial: adb serial of the device.
+            output_dir: Parent of this run's result folder.
+            log_to_console: Also log to the console.
+            log_to_file: Also log to ``<result_path>/``.
+            backend: UI backend for the hierarchy and screen size: ``"uiautomator2"``
+                (default), ``"carlo"`` or a :class:`~geppetto.core.backend.UiBackend`.
+            carlo_binary: Local Carlo binary for ``backend="carlo"`` (default:
+                ``$GEPPETTO_CARLO_BINARY``).
+
         Raises:
             DeviceNotFoundError: When the device does not answer adb.
+            CarloError: When ``backend="carlo"`` and the agent session cannot start.
+            ValueError: Unknown *backend* name.
         """
         self._serial = serial
 
         # ── Transport Layers ─────────────────────────────────────────
         self.adb = AdbClient(serial)
         self.fastboot = FastbootClient(serial)
-        self._u2 = U2Device(serial=serial)
 
         # ── Result Directory Setup ───────────────────────────────────
         run_ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -98,8 +111,62 @@ class Device:
         self.wifi = WifiService(self.adb)
         self.notification = NotificationService(self.adb)
 
+        # ── UI Backend (last: a Carlo session must not leak if setup above fails) ──
+        self._backend: UiBackend = create_backend(backend, self.adb, carlo_binary=carlo_binary)
+
     def __str__(self) -> str:
         return self._serial
+
+    def __enter__(self) -> Device:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """Release the UI backend (ends a Carlo session and its device files). Idempotent.
+
+        Cleanup failures are logged, never raised.
+        """
+        backend = self.__dict__.pop("_backend", None)
+        if backend is None:
+            return
+        try:
+            backend.close()
+        except Exception as e:  # noqa: BLE001 — closing must not hide the caller's outcome
+            logger = self.__dict__.get("logger")
+            if logger is not None:
+                logger.warning("Could not close the UI backend: %s", e)
+
+    @property
+    def backend(self) -> UiBackend:
+        """The UI backend this device reads the hierarchy and screen size from.
+
+        Raises:
+            AttributeError: After :meth:`close`.
+        """
+        return self._backend
+
+    @property
+    def _u2(self) -> Any:
+        """The ``uiautomator2.Device`` behind the default backend (assignable, e.g. in tests).
+
+        Raises:
+            AttributeError: When the backend is not uiautomator2.
+        """
+        backend = self.__dict__.get("_backend")
+        if isinstance(backend, Uiautomator2Backend):
+            return backend.u2
+        raise AttributeError("this Device does not use the uiautomator2 backend")
+
+    @_u2.setter
+    def _u2(self, value: object) -> None:
+        self._backend = Uiautomator2Backend(u2=value)
 
     # ── Device Properties ────────────────────────────────────────────
 
@@ -113,7 +180,7 @@ class Device:
 
     @property
     def screen_size(self) -> tuple[int, int]:
-        return cast(tuple[int, int], self._u2.window_size())
+        return self._backend.window_size()
 
     @property
     def bluetooth_address(self) -> str:
@@ -269,7 +336,15 @@ class Device:
     # ── UI Hierarchy ─────────────────────────────────────────────────
 
     def get_window_dump(self) -> WindowDump:
-        return WindowDump(self._u2.dump_hierarchy())
+        """The current UI hierarchy, from the UI backend.
+
+        Returns:
+            The parsed window dump.
+
+        Raises:
+            CarloError: With the Carlo backend, when the agent refuses or fails.
+        """
+        return WindowDump(self._backend.dump_hierarchy())
 
     def await_widget(
         self,
@@ -279,8 +354,12 @@ class Device:
     ) -> Widget:
         """Wait up to *timeout* seconds for a widget matching *by*/*value*.
 
+        Returns:
+            The matching widget from a fresh window dump.
+
         Raises:
             DeviceTimeoutError: When the widget doesn't appear in time.
+            ValueError: Unsupported *by* strategy.
         """
         selector_map = {
             By.TEXT: "text",
@@ -288,10 +367,17 @@ class Device:
             By.CLASS: "className",
             By.CONTENT_DESC: "description",
         }
-        if by is By.XPATH:
-            # Poll our own dump: uiautomator2's XPath engine names elements by class
+        if by is not By.XPATH and by not in selector_map:
+            raise ValueError(f"Unsupported By strategy: {by}")
+        backend = self._backend
+        if by in selector_map and isinstance(backend, Uiautomator2Backend):
+            if backend.wait_widget(selector_map[by], value, timeout):
+                return self.get_window_dump().find_widget(by, value)
+        else:
+            # Poll our own dump. For XPath, uiautomator2's engine names elements by class
             # (//android.widget.TextView) while WindowDump keeps the raw <node> tags, so the same
-            # expression must be evaluated by the same engine that find_widget uses.
+            # expression must be evaluated by the same engine that find_widget uses. Other
+            # backends have no server-side wait at all.
             deadline = time.monotonic() + timeout
             while True:
                 try:
@@ -300,14 +386,6 @@ class Device:
                     if time.monotonic() >= deadline:
                         break
                     time.sleep(0.5)
-            appeared = False
-        elif by in selector_map:
-            appeared = bool(self._u2(**{selector_map[by]: value}).wait(timeout=timeout))
-        else:
-            raise ValueError(f"Unsupported By strategy: {by}")
-
-        if appeared:
-            return self.get_window_dump().find_widget(by, value)
         raise DeviceTimeoutError(f"Timeout after {timeout}s waiting for {by.name}={value}")
 
     # ── Activity Wait ────────────────────────────────────────────────

@@ -38,6 +38,7 @@ nav:
       - Command line: guides/cli.md
       - Inspector: guides/inspector.md
       - Logcat and crashes: guides/logcat-and-crashes.md
+      - Carlo backend: guides/carlo.md
   - Recipes:
       - Login: recipes/login.md
       - Boot time: recipes/boot-time.md

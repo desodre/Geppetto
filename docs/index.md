@@ -19,5 +19,6 @@ labs, boot state and OS features.
 - [pytest fixtures and automatic failure artifacts](guides/pytest.md)
 - [Screen inspection and recording Python code](guides/inspector.md)
 - [Live logcat and watched crashes](guides/logcat-and-crashes.md)
+- [Opt-in Carlo UI backend](guides/carlo.md)
 - [Two-device tests](recipes/two-devices.md)
 - [Versioning and support commitments](policies/versioning.md)

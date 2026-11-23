@@ -14,6 +14,7 @@ from .device import Device
 from .exceptions import (
     AdbCommandError,
     AppCrashedError,
+    CarloError,
     DeviceIsSecureError,
     DeviceNotFoundError,
     DeviceTimeoutError,
@@ -73,6 +74,7 @@ __all__ = [
     "AdbCommandError",
     "EmulatorError",
     "AppCrashedError",
+    "CarloError",
     "LogNotFoundError",
     # Logcat
     "LogcatStream",

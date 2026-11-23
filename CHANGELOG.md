@@ -21,6 +21,16 @@
   native signals with stack/backtrace/tombstone; `AppCrashedError`. pytest: `--geppetto-watch`,
   ini `geppetto_watch`, marker `geppetto_watch(...)` fail a test when a watched app crashes and add
   `crash.txt` to the artifacts.
+- **Opt-in Carlo UI backend**: `Device(serial, backend="carlo", carlo_binary=...)` (or
+  `GEPPETTO_CARLO_BINARY`) reads the hierarchy and screen size from a Carlo agent session instead
+  of uiautomator2, which stays the default. `geppetto.core.carlo` (protocol v1 framing,
+  `CarloControlClient`, `CarloSession`) and `geppetto.core.backend` (`UiBackend`,
+  `create_backend`); errors are `CarloError` with a stable `code`. Host-tested only; Carlo's
+  pinned profile is API 36, API 34 is pending.
+- `Device.close()` and `with Device(...)`: release the UI backend (ends a Carlo session). The
+  pytest plugin closes every device at session end; a failing close is logged, never raised.
+- pytest: `--geppetto-backend` (env `GEPPETTO_BACKEND`) and `--geppetto-carlo-binary`.
+- `geppetto doctor` reports whether a Carlo binary is configured.
 
 ### Fixed
 - Pytest logcat artifacts fall back to second-resolution device time on older Android builds
