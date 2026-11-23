@@ -38,8 +38,10 @@
   `GEPPETTO_CARLO_BINARY`) reads the hierarchy and screen size from a Carlo agent session instead
   of uiautomator2, which stays the default. `geppetto.core.carlo` (protocol v1 framing,
   `CarloControlClient`, `CarloSession`) and `geppetto.core.backend` (`UiBackend`,
-  `create_backend`); errors are `CarloError` with a stable `code`. Host-tested only; Carlo's
-  pinned profile is API 36, API 34 is pending.
+  `create_backend`); errors are `CarloError` with a stable `code`. Host unit tests cover
+  protocol/session behaviour, and the full 19-test `integration/` suite passes locally against
+  `--geppetto-backend=carlo` on the pinned API 34 `x86_64` emulator (`reference_api34`,
+  alongside API 36 `samsung_a16x_api36`).
 - Carlo sessions restart once when a hierarchy dump finds Carlo gone (`closed`/`io`, e.g. after
   its 30 s idle exit); `auto_reconnect=False` on `CarloSession`/`CarloBackend` disables it.
   `CarloSession.dump_hierarchy()` and `parse_surface_orientation()` are new.
@@ -49,7 +51,9 @@
 - pytest: `--geppetto-backend` (env `GEPPETTO_BACKEND`) and `--geppetto-carlo-binary`.
 - `geppetto doctor` reports whether a Carlo binary is configured.
 - `geppetto inspect --backend {uiautomator2,carlo} --carlo-binary PATH` (env `GEPPETTO_BACKEND`,
-  `GEPPETTO_CARLO_BINARY`); the device and its Carlo session are closed when the inspector stops.
+  `GEPPETTO_CARLO_BINARY`); the device and its Carlo session are closed when the inspector stops,
+  and the generated recorder script uses `with Device(..., backend="carlo") as device:` when
+  recorded on a non-default backend.
 
 ### Fixed
 - Pytest logcat artifacts fall back to second-resolution device time on older Android builds

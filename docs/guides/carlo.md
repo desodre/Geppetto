@@ -11,12 +11,14 @@ through `adb shell` with either backend.
     - **uiautomator2 stays the default.** Carlo is opt-in and nothing changes unless you
       select it.
     - Geppetto's side of the Carlo wire protocol (v1 framing, control client, session
-      start/cleanup) is **tested on the host** against Carlo's shared protocol vectors and a
-      fake agent. It is not yet exercised by Geppetto's emulator CI.
-    - Carlo pins its supported device profile to **API 36**. API 34, which Geppetto's
-      integration CI uses, is **still pending** on the Carlo side.
-    - The Carlo backend covers the hierarchy dump and the screen size. `await_widget` polls
-      the dump (Carlo has no server-side wait).
+      start/cleanup) is covered by host unit tests against Carlo's shared protocol
+      vectors and a fake agent. The full 19-test `integration/` suite also passes locally
+      with `--geppetto-backend=carlo` on the pinned API 34 `x86_64` emulator (CI still
+      runs the default `uiautomator2` backend).
+    - Carlo pins hierarchy profiles for both **API 36** (`samsung_a16x_api36`) and the
+      **API 34 `x86_64` emulator** (`reference_api34`).
+    - The Carlo backend covers the hierarchy dump and the screen size. `await_widget` and
+      locators poll the dump (Carlo has no server-side wait).
 
 ## Configure the binary
 

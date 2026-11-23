@@ -262,3 +262,28 @@ def test_hierarchy_json_invalid_bounds_are_none():
     assert [n["bounds"] for n in nodes] == [[0, 0, 100, 100], None, None]
     assert len(elementos) == 3
     assert nodes[1]["attrs"]["text"] == "Hidden" and nodes[1]["selector"]["code"]
+
+
+def test_recorder_carlo_backend_uses_context_manager():
+    rec = Recorder("emulator-5554", backend="carlo")
+    rec.type_text("hello")
+    script = rec.script()
+    assert "with Device('emulator-5554', backend='carlo') as device:" in script
+    assert "    device.input_text('hello')" in script
+    compile(script, "recorded.py", "exec")
+
+
+def test_server_with_carlo_backend_emits_carlo_script(device):
+    from geppetto.core.backend import CarloBackend
+
+    device._backend = CarloBackend.__new__(CarloBackend)
+    server = InspectorServer(device, port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        server.recorder.key("home")
+        dados = json.loads(_get(server, "/api/code")[1])
+        assert "with Device(" in dados["script"]
+        assert "backend='carlo'" in dados["script"]
+    finally:
+        server.shutdown()

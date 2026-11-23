@@ -4,15 +4,21 @@ import time
 
 import pytest
 
-from geppetto import AppCrashedError, Device
+from geppetto import AppCrashedError
 from geppetto.core.adb import AdbClient
+
+from .conftest import make_device
 
 SETTINGS = "com.android.settings"
 
 
-@pytest.fixture(scope="module")
-def dev(serial, tmp_path_factory):
-    return Device(serial, output_dir=tmp_path_factory.mktemp("results"), log_to_console=False)
+@pytest.fixture
+def dev(pytestconfig, serial, tmp_path):
+    device = make_device(pytestconfig, serial, tmp_path / "results")
+    try:
+        yield device
+    finally:
+        device.close()
 
 
 def _sdk(serial) -> int:
@@ -37,7 +43,7 @@ def test_forced_crash_is_detected_with_the_exception(dev, serial):
             time.sleep(3)  # the watcher also settles on exit, but give the crash time to happen
 
 
-def test_plugin_fails_a_passing_test_when_the_app_crashes(pytester, serial, tmp_path):
+def test_plugin_fails_a_passing_test_when_the_app_crashes(pytester, pytestconfig, serial, tmp_path):
     if _sdk(serial) < 33:
         pytest.skip("`am crash` needs Android 13+")
     pytester.makepyfile(
@@ -51,7 +57,7 @@ def test_plugin_fails_a_passing_test_when_the_app_crashes(pytester, serial, tmp_
             time.sleep(3)
         """
     )
-    result = pytester.runpytest(
+    args = [
         "--serial",
         serial,
         "--geppetto-watch",
@@ -59,6 +65,13 @@ def test_plugin_fails_a_passing_test_when_the_app_crashes(pytester, serial, tmp_
         "--geppetto-output",
         str(tmp_path),
         "--geppetto-artifacts=on-failure",
-    )
+    ]
+    backend = pytestconfig.getoption("geppetto_backend")
+    if backend:
+        args.extend(["--geppetto-backend", str(backend)])
+    carlo_binary = pytestconfig.getoption("geppetto_carlo_binary")
+    if carlo_binary:
+        args.extend(["--geppetto-carlo-binary", str(carlo_binary)])
+    result = pytester.runpytest(*args)
     result.assert_outcomes(failed=1)
     result.stdout.fnmatch_lines(["*App crashed during the test*"])

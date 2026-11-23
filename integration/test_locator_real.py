@@ -2,7 +2,9 @@
 
 import pytest
 
-from geppetto import By, Device, DeviceTimeoutError, ExpectationError, expect
+from geppetto import By, DeviceTimeoutError, ExpectationError, expect
+
+from .conftest import make_device
 
 SETTINGS = "com.android.settings"
 #: Settings search runs in its own package on Google images; left open, it hides Settings.
@@ -12,8 +14,12 @@ EDIT_TEXT = "android.widget.EditText"
 
 
 @pytest.fixture(scope="module")
-def dev(serial, tmp_path_factory):
-    return Device(serial, output_dir=tmp_path_factory.mktemp("results"), log_to_console=False)
+def dev(serial, tmp_path_factory, pytestconfig):
+    device = make_device(pytestconfig, serial, tmp_path_factory.mktemp("results"))
+    try:
+        yield device
+    finally:
+        device.close()
 
 
 @pytest.fixture

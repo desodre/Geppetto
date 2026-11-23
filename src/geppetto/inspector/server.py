@@ -27,6 +27,7 @@ from typing import TYPE_CHECKING, Any
 
 from lxml import etree
 
+from ..core.backend import CarloBackend
 from ..ui.bounds import Bounds
 from .recorder import KEYS, Recorder
 from .selectors import recommend
@@ -186,7 +187,12 @@ class InspectorServer:
     """
 
     def __init__(self, device: Device, host: str = "127.0.0.1", port: int = 8765) -> None:
-        self.estado = _Estado(device, Recorder(device.serial))
+        backend = (
+            "carlo"
+            if isinstance(getattr(device, "_backend", None), CarloBackend)
+            else "uiautomator2"
+        )
+        self.estado = _Estado(device, Recorder(device.serial, backend=backend))
         self.httpd = ThreadingHTTPServer((host, port), _handler(self.estado))
         self.httpd.daemon_threads = True
 

@@ -188,7 +188,8 @@ If the machine has no Python 3.12, `UV_PYTHON=3.14 uv sync --group dev` works lo
 - **`screenrecord`** is capped at 180 s by Android.
 - **First `Device(serial)` installs the uiautomator2 agent** on the phone. Ask before running
   against someone's device. `backend="carlo"` pushes Carlo to `/data/local/tmp` instead and
-  removes it on `close()`; Carlo's pinned profile is API 36 (API 34 pending).
+  removes it on `close()`; Carlo pins both API 36 (`samsung_a16x_api36`) and the API 34
+  `x86_64` emulator (`reference_api34`).
 - **Reboot** is not done when `adb wait-for-device` returns; wait for `sys.boot_completed`
   (`Device.wait_for_boot`).
 - **A booting emulator** shows as `device` in `adb devices` while its shell still answers

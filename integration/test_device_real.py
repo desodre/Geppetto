@@ -2,14 +2,20 @@
 
 import pytest
 
-from geppetto import By, Device, DeviceTimeoutError
+from geppetto import By, DeviceTimeoutError
+
+from .conftest import make_device
 
 SETTINGS = "com.android.settings"
 
 
 @pytest.fixture(scope="module")
-def dev(serial, tmp_path_factory):
-    return Device(serial, output_dir=tmp_path_factory.mktemp("results"), log_to_console=False)
+def dev(serial, tmp_path_factory, pytestconfig):
+    device = make_device(pytestconfig, serial, tmp_path_factory.mktemp("results"))
+    try:
+        yield device
+    finally:
+        device.close()
 
 
 def test_settings_opens_and_the_hierarchy_is_parsed(dev):
