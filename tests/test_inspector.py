@@ -7,7 +7,14 @@ import pytest
 from lxml import etree
 
 from geppetto import By, WindowDump
-from geppetto.inspector import InspectorServer, Recorder, Selector, recommend, xpath_literal
+from geppetto.inspector import (
+    InspectorServer,
+    Recorder,
+    Selector,
+    hierarchy_json,
+    recommend,
+    xpath_literal,
+)
 
 # A list where every row shares the resource-id, duplicated texts, quotes and a node with nothing.
 LISTA = """<hierarchy>
@@ -122,15 +129,19 @@ def test_recorded_script_runs(monkeypatch):
 
     feito = []
 
+    class FakeLocator:
+        def __init__(self, by, value):
+            self.alvo = (by, value)
+
+        def click(self):
+            feito.append(("click", self.alvo))
+
     class FakeDevice:
         def __init__(self, serial):
             feito.append(("device", serial))
 
-        def await_widget(self, by, value):
-            return (by, value)
-
-        def click(self, alvo):
-            feito.append(("click", alvo))
+        def get(self, by, value):
+            return FakeLocator(by, value)
 
         def input_text(self, text):
             feito.append(("text", text))
@@ -197,7 +208,7 @@ def test_server_serves_page_screenshot_and_hierarchy(servidor):
         if n["attrs"].get("text") == "Login" and n["attrs"]["class"].endswith("Button")
     )
     assert login["bounds"] == [100, 400, 500, 500]
-    assert login["selector"]["code"] == "device.await_widget(By.ID, 'com.app:id/login')"
+    assert login["selector"]["code"] == "device.get(By.ID, 'com.app:id/login')"
 
 
 def test_server_records_actions(servidor, adb_run):
@@ -206,7 +217,7 @@ def test_server_records_actions(servidor, adb_run):
 
     assert _post(
         servidor, "/api/action", {"type": "click", "node": login["index"], "record": True}
-    )["code"] == ("device.click(device.await_widget(By.ID, 'com.app:id/login'))")
+    )["code"] == ("device.get(By.ID, 'com.app:id/login').click()")
     assert _post(servidor, "/api/action", {"type": "text", "text": "a b", "record": True})[
         "code"
     ] == ("device.input_text('a b')")
@@ -237,3 +248,42 @@ def test_cli_inspect_parser():
 
     args = build_parser().parse_args(["inspect", "-s", "S", "--port", "0", "--no-browser"])
     assert (args.serial, args.port, args.no_browser, args.host) == ("S", 0, True, "127.0.0.1")
+
+
+def test_hierarchy_json_invalid_bounds_are_none():
+    # Carlo reports off-screen nodes with inverted bounds; they must not break /api/hierarchy.
+    xml = (
+        '<hierarchy><node class="a.Root" bounds="[0,0][100,100]">'
+        '<node class="a.Off" text="Hidden" bounds="[0,2400][1080,2200]"/>'
+        '<node class="a.Bad" text="Junk" bounds="nonsense"/>'
+        "</node></hierarchy>"
+    )
+    nodes, elementos = hierarchy_json(xml)
+    assert [n["bounds"] for n in nodes] == [[0, 0, 100, 100], None, None]
+    assert len(elementos) == 3
+    assert nodes[1]["attrs"]["text"] == "Hidden" and nodes[1]["selector"]["code"]
+
+
+def test_recorder_carlo_backend_uses_context_manager():
+    rec = Recorder("emulator-5554", backend="carlo")
+    rec.type_text("hello")
+    script = rec.script()
+    assert "with Device('emulator-5554', backend='carlo') as device:" in script
+    assert "    device.input_text('hello')" in script
+    compile(script, "recorded.py", "exec")
+
+
+def test_server_with_carlo_backend_emits_carlo_script(device):
+    from geppetto.core.backend import CarloBackend
+
+    device._backend = CarloBackend.__new__(CarloBackend)
+    server = InspectorServer(device, port=0)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        server.recorder.key("home")
+        dados = json.loads(_get(server, "/api/code")[1])
+        assert "with Device(" in dados["script"]
+        assert "backend='carlo'" in dados["script"]
+    finally:
+        server.shutdown()

@@ -15,11 +15,12 @@ class Recorder:
     """Accumulates steps; :meth:`script` renders them as a standalone program."""
 
     serial: str
+    backend: str = "uiautomator2"
     steps: list[str] = field(default_factory=list)
 
     def click(self, selector: Selector) -> str:
         aviso = "  # fragile: position-based selector" if selector.fragile else ""
-        return self._add(f"device.click({selector.code()}){aviso}")
+        return self._add(f"{selector.code()}.click(){aviso}")
 
     def type_text(self, text: str) -> str:
         return self._add(f"device.input_text({text!r})")
@@ -40,12 +41,23 @@ class Recorder:
         self.steps.clear()
 
     def script(self) -> str:
-        corpo = "\n".join(f"    {passo}" for passo in self.steps) or "    pass"
+        if self.backend == "uiautomator2":
+            corpo = "\n".join(f"    {passo}" for passo in self.steps) or "    pass"
+            return (
+                '"""Recorded with `geppetto inspect`."""\n\n'
+                "from geppetto import By, Device\n\n\n"
+                "def main() -> None:\n"
+                f"    device = Device({self.serial!r})\n"
+                f"{corpo}\n\n\n"
+                'if __name__ == "__main__":\n'
+                "    main()\n"
+            )
+        corpo = "\n".join(f"        {passo}" for passo in self.steps) or "        pass"
         return (
             '"""Recorded with `geppetto inspect`."""\n\n'
             "from geppetto import By, Device\n\n\n"
             "def main() -> None:\n"
-            f"    device = Device({self.serial!r})\n"
+            f"    with Device({self.serial!r}, backend={self.backend!r}) as device:\n"
             f"{corpo}\n\n\n"
             'if __name__ == "__main__":\n'
             "    main()\n"

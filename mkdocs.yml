@@ -35,9 +35,11 @@ nav:
   - Getting started: getting-started.md
   - Guides:
       - pytest: guides/pytest.md
+      - Locators and expect: guides/locators.md
       - Command line: guides/cli.md
       - Inspector: guides/inspector.md
       - Logcat and crashes: guides/logcat-and-crashes.md
+      - Carlo backend: guides/carlo.md
   - Recipes:
       - Login: recipes/login.md
       - Boot time: recipes/boot-time.md
@@ -45,6 +47,7 @@ nav:
       - Failure artifacts: recipes/failure-artifacts.md
   - API reference:
       - Device: reference/device.md
+      - Locators: reference/locator.md
       - UI and models: reference/ui-and-models.md
       - Transport and services: reference/transport-and-services.md
       - Recording and logcat: reference/recording-and-logcat.md

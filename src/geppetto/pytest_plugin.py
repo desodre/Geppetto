@@ -19,6 +19,10 @@ Options (output and artifact mode can also be set in ``[tool.pytest.ini_options]
 ``--geppetto-logcat-seconds``  keep this many seconds of test logcat (default: 120)
 ``--geppetto-watch PKG``   fail the test when this app crashes, ANRs or dies by a signal during it
                            (repeatable; ini ``geppetto_watch``; marker ``geppetto_watch("pkg")``)
+``--geppetto-backend``     UI backend: ``uiautomator2`` (default) or ``carlo`` (env
+                           ``GEPPETTO_BACKEND``)
+``--geppetto-carlo-binary``  local Carlo binary for the ``carlo`` backend (env
+                           ``GEPPETTO_CARLO_BINARY``)
 
 Artifacts of a device test go to ``<device result folder>/Tests/<test id>/``: ``screenshot.png``,
 ``window_dump.xml``, ``logcat.txt`` (recent test logcat without clearing the device buffer)
@@ -52,6 +56,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from .core.adb import list_devices
+from .core.backend import BACKEND_NAMES  # stdlib only: uiautomator2 is imported lazily
 
 if TYPE_CHECKING:  # Device pulls uiautomator2: imported only when a test asks for a device
     from .crashes import CrashWatcher
@@ -61,6 +66,9 @@ if TYPE_CHECKING:  # Device pulls uiautomator2: imported only when a test asks f
 logger = logging.getLogger("geppetto.pytest")
 
 DeviceFactory = Callable[[str], "Device"]
+
+_DEFAULT_BACKEND = "uiautomator2"
+_BACKENDS = BACKEND_NAMES
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -124,6 +132,20 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         metavar="PACKAGE",
         help="Fail a device test when this app crashes during it (repeatable).",
     )
+    group.addoption(
+        "--geppetto-backend",
+        choices=_BACKENDS,
+        default=None,
+        dest="geppetto_backend",
+        help="UI backend of the devices (default: env GEPPETTO_BACKEND or uiautomator2).",
+    )
+    group.addoption(
+        "--geppetto-carlo-binary",
+        default=None,
+        dest="geppetto_carlo_binary",
+        metavar="PATH",
+        help="Local Carlo binary for --geppetto-backend=carlo (env GEPPETTO_CARLO_BINARY).",
+    )
     parser.addini("geppetto_watch", "Packages whose crashes fail device tests.", type="linelist")
     parser.addini("geppetto_output", "Folder for logs and artifacts.", default="./results")
     parser.addini("geppetto_artifacts", "on-failure | always | never", default="on-failure")
@@ -133,6 +155,8 @@ def pytest_configure(config: pytest.Config) -> None:
     seconds = config.getoption("geppetto_logcat_seconds")
     if not math.isfinite(seconds) or seconds <= 0:
         raise pytest.UsageError("--geppetto-logcat-seconds must be a positive finite number")
+    if _backend(config) not in _BACKENDS:
+        raise pytest.UsageError(f"GEPPETTO_BACKEND must be one of: {', '.join(_BACKENDS)}")
     config.addinivalue_line(
         "markers", "geppetto: test uses a Geppetto device (set automatically by the fixtures)."
     )
@@ -140,6 +164,19 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "geppetto_watch(*packages): fail the test if one of these apps crashes during it.",
     )
+
+
+def _backend(config: pytest.Config) -> str:
+    return str(
+        config.getoption("geppetto_backend")
+        or os.environ.get("GEPPETTO_BACKEND")
+        or _DEFAULT_BACKEND
+    )
+
+
+def _carlo_binary(config: pytest.Config) -> str | None:
+    option = config.getoption("geppetto_carlo_binary") or os.environ.get("GEPPETTO_CARLO_BINARY")
+    return str(option) if option else None
 
 
 def _output_dir(config: pytest.Config) -> Path:
@@ -170,18 +207,34 @@ def geppetto_serials(pytestconfig: pytest.Config) -> list[str]:
 def geppetto_device_factory(pytestconfig: pytest.Config) -> DeviceFactory:
     """How a serial becomes a :class:`Device`. Override in ``conftest.py`` to customise."""
     output = _output_dir(pytestconfig)
+    backend = _backend(pytestconfig)
+    carlo_binary = _carlo_binary(pytestconfig)
 
     def factory(serial: str) -> Device:
         from .device import Device
 
-        return Device(serial, output_dir=output)
+        if backend == _DEFAULT_BACKEND:
+            return Device(serial, output_dir=output)
+        return Device(serial, output_dir=output, backend=backend, carlo_binary=carlo_binary)
 
     return factory
 
 
 @pytest.fixture(scope="session")
-def _geppetto_device_cache() -> dict[str, Device]:
-    return {}
+def _geppetto_device_cache() -> Generator[dict[str, Device]]:
+    cache: dict[str, Device] = {}
+    try:
+        yield cache
+    finally:
+        for serial, dev in cache.items():
+            close = getattr(dev, "close", None)  # a custom factory may return a stand-in
+            if close is None:
+                continue
+            try:
+                close()
+            except Exception as erro:  # noqa: BLE001 — cleanup must not alter test results
+                logger.warning("Could not close device %s: %s", serial, erro)
+        cache.clear()
 
 
 def _device_for(serial: str, cache: dict[str, Device], factory: DeviceFactory) -> Device:

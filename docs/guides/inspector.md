@@ -8,7 +8,8 @@ geppetto inspect -s emulator-5554
 
 Open the printed localhost URL. Hover highlights bounds; selecting a node shows attributes
 and its recommended unique selector. Stable attributes win; position-based fallback is
-marked fragile. Record mode executes taps/text/keys and generates Python to copy/download.
+marked fragile. Record mode executes taps/text/keys and generates Python to copy/download;
+recorded taps use auto-waiting [locators](locators.md) (`device.get(By.ID, ...).click()`).
 
 The server defaults to `127.0.0.1`; `--port 0` picks a free port. `--host` deliberately exposes
 an interface that controls the device. Recorded text becomes part of the generated script;

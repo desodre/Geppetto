@@ -13,7 +13,9 @@ uv run pytest examples/pytest/test_login.py --serial emulator-5554
 ```
 
 The example conftest starts/stops the app in a clean state and customizes the Device factory.
-Wait for widgets rather than adding sleeps; password input suppresses logging.
+The test uses [locators](../guides/locators.md): `fill()` and `click()` wait for each field, and
+`expect()` retries until the welcome text appears, so no sleeps are needed. `log_text=False`
+keeps the password out of the logs.
 
 ```python
 --8<-- "examples/pytest/test_login.py"

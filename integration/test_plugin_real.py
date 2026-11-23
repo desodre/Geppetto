@@ -4,7 +4,7 @@ import pathlib
 import xml.etree.ElementTree as ET
 
 
-def test_failure_artifacts_are_real(pytester, serial, tmp_path):
+def test_failure_artifacts_are_real(pytester, serial, tmp_path, pytestconfig):
     pytester.makepyfile(
         "import time\n"
         "def test_falha(device):\n"
@@ -12,7 +12,7 @@ def test_failure_artifacts_are_real(pytester, serial, tmp_path):
         "    time.sleep(1)\n"
         "    assert False\n"
     )
-    result = pytester.runpytest(
+    args = [
         "--serial",
         serial,
         "--geppetto-output",
@@ -21,7 +21,12 @@ def test_failure_artifacts_are_real(pytester, serial, tmp_path):
         "--junitxml=junit.xml",
         "--html=report.html",
         "--self-contained-html",
-    )
+    ]
+    if backend := pytestconfig.getoption("geppetto_backend"):
+        args.extend(["--geppetto-backend", backend])
+    if carlo_binary := pytestconfig.getoption("geppetto_carlo_binary"):
+        args.extend(["--geppetto-carlo-binary", carlo_binary])
+    result = pytester.runpytest(*args)
     result.assert_outcomes(failed=1)
     props = {
         p.get("name"): p.get("value")

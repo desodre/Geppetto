@@ -59,18 +59,17 @@ uv add "geppetto-android[all]"
 ## Quick start
 
 ```python
-from geppetto import By, Device, WifiSecurityType
+from geppetto import By, Device, WifiSecurityType, expect
 
 device = Device("SERIAL_NUMBER")
 
 device.install("app.apk", replace=True)
 device.open_app("com.example.app")
 
-login_button = device.await_widget(By.TEXT, "Login", timeout=15)
-device.click(login_button)
-
-device.input_text("hello world")              # spaces are kept
-device.input_text("s3cr3t", log_text=False)    # secrets stay out of the logs
+device.get(By.ID, "com.example.app:id/username").fill("hello world")   # waits, then types
+device.get(By.ID, "com.example.app:id/password").fill("s3cr3t", log_text=False)
+device.get(By.TEXT, "Login").click()                                    # waits for the button
+expect(device.get(By.TEXT, "Welcome")).to_be_visible()                  # retries until timeout
 
 # Saved under <output_dir>/<run>_<serial>/Images/Screenshots/login_screen.png
 device.screenshot("login_screen", pull_to_results=True)
@@ -90,8 +89,9 @@ Every exception derives from `GeppettoError`:
 | `DeviceIsSecureError` | `adb root` refused on a secure build |
 | `AdbCommandError` | a host-side adb command failed (message has adb's output) |
 | `EmulatorError` | emulator missing, unknown AVD, or the emulator exited while starting |
-| `LogNotFoundError` | `expect()` timed out, or `expect_no()` saw the line |
+| `LogNotFoundError` | `log.expect()` timed out, or `log.expect_no()` saw the line |
 | `AppCrashedError` | a watched app crashed, ANR'd or died by a native signal |
+| `ExpectationError` | an `expect(locator)` assertion did not hold in time (also an `AssertionError`) |
 
 ### Logging
 
@@ -99,6 +99,73 @@ Geppetto logs under the `geppetto` logger hierarchy and adds only a `NullHandler
 own logging configuration (or pytest's `caplog`) receives every record. `Device` also prints to
 the console and writes `Logs/device.log`/`Logs/adb.log` in its result folder; turn that off with
 `Device(serial, log_to_console=False, log_to_file=False)`.
+
+## Locators and `expect()`
+
+`device.get(by, value)` returns a lazy `Locator`: nothing is looked up until you act on it, and
+every action waits (up to `device.default_timeout`, 10 s) for the element to be visible and
+enabled. No `sleep`, no manual `await_widget` before each tap.
+
+```python
+from geppetto import By, expect
+
+device.get(By.ID, "com.app:id/email").fill("me@example.com")   # tap, clear, type
+device.get(By.TEXT, "Sign in").click()
+device.get(By.TEXT, "Help").long_press()
+device.get(By.ID, "com.app:id/item").first.swipe_to(device.get(By.TEXT, "Trash"))
+
+expect(device.get(By.ID, "com.app:id/error")).to_have_text("Invalid password")
+expect(device.get(By.TEXT, "Signing in…")).to_be_hidden()
+expect(device.get(By.ID, "com.app:id/row")).to_have_count(3)
+expect(device.get(By.TEXT, "Remember me")).not_.to_be_checked()
+```
+
+Refine a locator by chaining (each call returns a new one):
+
+| Call | Meaning |
+|---|---|
+| `.get(by, value)` | descendants of the current matches |
+| `.filter(by, value)` / `.filter(has=loc)` | same node must also match / must contain a match of `loc` |
+| `.within(loc)` | inside the first match of `loc` |
+| `.below(loc)`, `.above(loc)`, `.right_of(loc)`, `.left_of(loc)` | on that side of `loc`, closest first |
+| `.nth(i)`, `.first`, `.last` | one match by position |
+| `exact=False` | case-insensitive substring; a compiled regex as `value` matches with `search()` |
+
+```python
+rows = device.get(By.ID, "com.android.settings:id/recycler_view").get(By.CLASS, "android.widget.LinearLayout")
+rows.filter(has=device.get(By.TEXT, "Bluetooth")).get(By.CLASS, "android.widget.Switch").click()
+device.get(By.CLASS, "android.widget.EditText").below(device.get(By.TEXT, "Email")).fill("me@x.io")
+device.get(By.TEXT, re.compile(r"^Wi.?Fi$")).click()
+```
+
+Reads: `loc.widget()` waits for the first match and returns the `Widget` (children included);
+`loc.all()`, `loc.count()`, `loc.is_visible()`, `loc.is_enabled()`, `loc.is_checked()` answer
+right now, without waiting; `loc.wait_for("visible" | "hidden" | "enabled" | "attached")`.
+
+Assertions: `to_be_visible`, `to_be_hidden`, `to_be_enabled`, `to_be_disabled`, `to_be_checked`,
+`to_be_selected`, `to_be_focused`, `to_have_text(text | regex, exact=True)`, `to_contain_text`,
+`to_have_content_desc`, `to_have_count`; all take `timeout=` and are negated with `.not_`.
+A failed expectation raises `ExpectationError` (an `AssertionError` too) whose message carries the
+expectation and the last state seen, e.g. `Expected device.get(By.ID, 'com.app:id/error') to be text
+'Invalid password' (waited 10s); last seen: text 'Signing in…'`. Timeouts from actions
+(`DeviceTimeoutError`) do the same: `last seen: 0 matches`, or the widget with `enabled=False`.
+
+### Migrating from `await_widget` / `find_widget`
+
+The old API keeps working and emits no warning: nothing is removed before 3.0, and any removal is
+announced with a `DeprecationWarning` one minor release earlier (see the versioning policy). New
+code and `geppetto inspect` recordings use locators:
+
+| Before | After |
+|---|---|
+| `device.click(device.await_widget(By.TEXT, "Login"))` | `device.get(By.TEXT, "Login").click()` |
+| `w = device.await_widget(By.ID, rid, timeout=15)` | `w = device.get(By.ID, rid).widget(timeout=15)` |
+| `device.get_window_dump().find_widget(By.XPATH, xp)` | `device.get(By.XPATH, xp).widget()` |
+| `device.click(field); device.input_text("x")` | `device.get(...).fill("x")` (or `.type_text("x")` to append) |
+| `assert device.await_widget(By.ID, rid).text == "x"` | `expect(device.get(By.ID, rid)).to_have_text("x")` |
+| `time.sleep(2)` before a lookup | nothing: actions and `expect()` wait |
+
+`Device(serial, default_timeout=20)` changes the wait for every locator of that device.
 
 ## pytest plugin
 
@@ -142,12 +209,12 @@ created. A runnable login example and its small Android app live in
 
 ```python
 with device.logcat(package="com.example", level="I") as log:    # from now on, nothing cleared
-    device.click(device.await_widget(By.ID, "com.example:id/pay"))
+    device.get(By.ID, "com.example:id/pay").click()
     log.expect(r"Payment OK", timeout=10)                       # waits for a new matching line
     log.expect_no("Exception", within=2)                        # fails if one shows up
 
 with device.watch_crashes("com.example"):                       # AppCrashedError at the end of
-    device.click(...)                                            # the block, with the stack trace
+    device.get(By.TEXT, "Pay").click()                          # the block, with the stack trace
 ```
 
 Filters: `package` (follows the app across restarts), `tags`, minimum `level` (`V D I W E F`)
@@ -197,7 +264,7 @@ from geppetto import By, Device
 
 def main() -> None:
     device = Device('emulator-5554')
-    device.click(device.await_widget(By.ID, 'com.android.settings:id/search_action_bar'))
+    device.get(By.ID, 'com.android.settings:id/search_action_bar').click()
     device.input_text('wifi')
 ```
 
@@ -212,6 +279,7 @@ the default install folder).
 ## Main components
 
 - `Device`: primary facade and entry point.
+- `geppetto.locator`: `Locator` (auto-waiting actions) and `expect()` (retrying assertions).
 - `geppetto.pytest_plugin`: fixtures, CLI options and failure artifacts for pytest.
 - `geppetto` command line (`geppetto.cli`): devices, doctor, shot, record, emulator, pairing, inspect.
 - `geppetto.inspector`: selector recommendation, code recorder and the local web inspector.

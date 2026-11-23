@@ -27,17 +27,26 @@ parent issue per theme, sub-issues for the work, each with a **Done when**.
 src/geppetto/
   __init__.py        public API, __version__ (single source), lazy optional imports
   device.py          Device: the facade users touch. Composes everything below.
+  locator/           Device.get() → Locator: query.py (pure resolution of chained steps on the
+                     dump: match/filter/has/within/relative/nth), locator.py (auto-waiting actions
+                     through Device methods), assertions.py (expect() retrying until timeout,
+                     ExpectationError with the last observed state)
   recording.py       ScreenRecording: background screenrecord (start / stop(save_to) / discard)
   logcat.py          LogcatStream: `logcat -T <device time>` read in a thread (never `logcat -c`),
                      filters, ring buffer, expect()/expect_no(), settle()
   crashes.py         CrashWatcher: Java/ANR/native crash parsing from every logcat line
   pytest_plugin.py   pytest11 entry point: options, device fixtures, failure artifacts, reports
-  exceptions.py      GeppettoError and its subclasses (every error we raise)
+  exceptions.py      GeppettoError and its subclasses (every error we raise; CarloError has .code)
   _logging.py        "geppetto.*" logger hierarchy + DeviceLogger (opt-in handlers)
   core/              transport: AdbClient, FastbootClient. Only place that spawns processes.
     adb.py           per-device adb (shell quoting, exec_out, spawn_shell, wait_for_boot)
     host.py          host-wide adb: devices -l, pair/connect, mdns, run_adb (AdbCommandError)
     emulator.py      SDK lookup, AVDs, start (waits for boot) / stop, snapshots
+    backend.py       UiBackend protocol (dump_hierarchy, window_size, close) + uiautomator2
+                     (default, imported lazily) and Carlo backends; create_backend()
+    carlo.py         Carlo agent host side: protocol v1 framing (header checked before payload),
+                     CarloControlClient, CarloSession (push to a 0700 dir, ready line, adb
+                     forward, hello, cleanup on any failure); errors are CarloError(code=...)
   doctor.py          environment checks; every non-OK Check carries a fix
   cli.py             `geppetto` console script (argparse, no extra deps; QR needs [cli])
   inspector/         `geppetto inspect`: selectors.py (recommend: unique-only, stable first),
@@ -65,10 +74,20 @@ analyzers, hardware: optional, imported lazily from geppetto/__init__.py
 - **`ui/`** and **`models/`** are pure: no I/O, fully unit-testable with XML strings.
 - **`services/`** receive an `AdbClient`, never a `Device` (no cycles).
 - **`Device`** wires it together and owns the result folder (`<output>/<ts>_<serial>/`
-  with `Images/Screenshots`, `Videos/Screenrecords`, `Logs`).
+  with `Images/Screenshots`, `Videos/Screenrecords`, `Logs`). It reads the hierarchy and screen
+  size through a `core.backend.UiBackend` (`backend="uiautomator2"` default, `"carlo"` opt-in)
+  and releases it in `close()` / `with Device(...)`. Taps, text and keys stay on `adb shell`.
+- **`locator/`** depends on `Device` (imported only under `TYPE_CHECKING`; `Device.get()` imports
+  it lazily). `query.py` never does I/O: new selector relations go there with XML-only tests.
+  Actions call `Device.click/swipe/input_text`, never `adb` directly, except `fill()`'s key events.
+  Locators read the hierarchy through `Device.get_window_dump()`, so they work on any backend.
+- **Carlo** (`core/carlo.py`): the ready-line session ID is a bearer secret sent only in
+  `hello`; never log it, nor hierarchy XML. Every failure raises `CarloError` with a stable
+  `code`. Its unit tests (`tests/test_carlo.py`) use Carlo's shared vectors copied into
+  `tests/fixtures/carlo/`; refresh them when Carlo's protocol changes.
 - **`pytest_plugin.py`** loads on every pytest run where the package is installed: keep its import
   cheap (`Device`/uiautomator2 are imported lazily) and never let an artifact failure change a test
-  outcome. Its own tests use `pytester` with a fake `Device` from `geppetto_device_factory`; this
+  outcome. Devices are closed at session end; a failing `close()` is logged, never raised. Its own tests use `pytester` with a fake `Device` from `geppetto_device_factory`; this
   repo's suite sets `geppetto_artifacts = "never"` so the capture does not touch the library tests.
   It records video by default and reads recent logcat without clearing device-wide buffers.
 - New big features get their own module/package (`locator/`, `cli/`…) depending on `Device`,
@@ -159,12 +178,18 @@ If the machine has no Python 3.12, `UV_PYTHON=3.14 uv sync --group dev` works lo
   match, so a shared value would record a tap on another element. `tests/test_inspector.py` checks
   that every recommended selector finds exactly its own node; keep that test passing.
 - **`input text`**: a raw space ends the text; spaces must be `%s` (done by `Device.input_text`).
+- **A package attribute shadows its module**: `geppetto.locator.expect` is the function, so the
+  assertions live in `locator/assertions.py` (monkeypatching `geppetto.locator.expect.time` fails).
+- **Hierarchy dumps mark `enabled`** on every node; the `DUMP` in `tests/conftest.py` omits it on
+  the inner TextView, so that node is "disabled" for locators. Add the attribute in new fixtures.
 - **uiautomator2 XPath** is `d.xpath(expr)`, not `d(xpath=...)`.
 - **lxml XPath** can return numbers/strings (`count(...)`): filter for `etree._Element`.
 - **Never interpolate user text into XPath**; pass XPath variables (`$text`) instead.
 - **`screenrecord`** is capped at 180 s by Android.
 - **First `Device(serial)` installs the uiautomator2 agent** on the phone. Ask before running
-  against someone's device.
+  against someone's device. `backend="carlo"` pushes Carlo to `/data/local/tmp` instead and
+  removes it on `close()`; Carlo pins both API 36 (`samsung_a16x_api36`) and the API 34
+  `x86_64` emulator (`reference_api34`).
 - **Reboot** is not done when `adb wait-for-device` returns; wait for `sys.boot_completed`
   (`Device.wait_for_boot`).
 - **A booting emulator** shows as `device` in `adb devices` while its shell still answers

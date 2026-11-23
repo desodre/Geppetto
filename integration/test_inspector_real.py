@@ -1,21 +1,27 @@
 """The inspector against a real device: record a tap and replay the generated script."""
 
 import json
+import os
 import threading
 import time
 import urllib.request
 
 import pytest
 
-from geppetto import Device
 from geppetto.inspector import InspectorServer
+
+from .conftest import make_device
 
 SETTINGS = "com.android.settings"
 
 
 @pytest.fixture(scope="module")
-def dev(serial, tmp_path_factory):
-    return Device(serial, output_dir=tmp_path_factory.mktemp("results"), log_to_console=False)
+def dev(serial, tmp_path_factory, pytestconfig):
+    device = make_device(pytestconfig, serial, tmp_path_factory.mktemp("results"))
+    try:
+        yield device
+    finally:
+        device.close()
 
 
 @pytest.fixture
@@ -39,7 +45,7 @@ def _post(srv, path, body):
         return json.loads(r.read())
 
 
-def test_recorded_tap_replays(dev, server):
+def test_recorded_tap_replays(dev, server, pytestconfig, monkeypatch):
     dev.kill_app(SETTINGS)
     dev.open_app(SETTINGS)
     assert dev.await_for_activity(SETTINGS, timeout=20)
@@ -72,12 +78,18 @@ def test_recorded_tap_replays(dev, server):
     linha = _post(server, "api/action", {"type": "click", "node": alvo["index"], "record": True})[
         "code"
     ]
-    assert linha.startswith("device.click(device.await_widget(")
+    assert linha.startswith("device.get(By.") and linha.rstrip().endswith(".click()")
 
     script = json.loads(_get(server, "api/code"))["script"]
-    # Back to where the recording started, then run the generated program as a user would.
+    # Release the inspector's backend session before replaying the standalone script
+    # (Android allows one active UiAutomation session at a time), then restore Settings.
     dev.kill_app(SETTINGS)
     dev.open_app(SETTINGS)
     assert dev.await_for_activity(SETTINGS, timeout=20)
+    if carlo_bin := (
+        pytestconfig.getoption("geppetto_carlo_binary") or os.environ.get("GEPPETTO_CARLO_BINARY")
+    ):
+        monkeypatch.setenv("GEPPETTO_CARLO_BINARY", str(carlo_bin))
+    dev.close()
     exec(compile(script, "recorded_flow.py", "exec"), {"__name__": "__main__"})
     dev.kill_app(SETTINGS)
