@@ -72,7 +72,7 @@ def test_recorded_tap_replays(dev, server):
     linha = _post(server, "api/action", {"type": "click", "node": alvo["index"], "record": True})[
         "code"
     ]
-    assert linha.startswith("device.click(device.await_widget(")
+    assert linha.startswith("device.get(By.") and linha.rstrip().endswith(".click()")
 
     script = json.loads(_get(server, "api/code"))["script"]
     # Back to where the recording started, then run the generated program as a user would.

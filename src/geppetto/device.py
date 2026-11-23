@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import time
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 from uiautomator2 import Device as U2Device
 
@@ -24,6 +25,9 @@ from .ui.bounds import Bounds
 from .ui.widget import Widget
 from .ui.window_dump import WindowDump
 
+if TYPE_CHECKING:
+    from .locator import Locator
+
 
 class Device:
     """High-level Android device controller.
@@ -36,9 +40,12 @@ class Device:
 
         device = Device("SERIAL123")
         device.install("app.apk", replace=True)
-        widget = device.await_widget(By.TEXT, "Login")
-        device.click(widget)
+        device.get(By.TEXT, "Login").click()          # waits for the button, then taps it
+        expect(device.get(By.ID, "com.app:id/home")).to_be_visible()
     """
+
+    #: Seconds a locator action or ``expect()`` waits before giving up (per device).
+    default_timeout: float = 10.0
 
     class BluetoothAction(Enum):
         ENABLE = "enable"
@@ -57,13 +64,17 @@ class Device:
         *,
         log_to_console: bool = True,
         log_to_file: bool = True,
+        default_timeout: float = 10.0,
     ) -> None:
         """Connect to the device *serial*.
+
+        *default_timeout* bounds every locator action and ``expect()`` on this device.
 
         Raises:
             DeviceNotFoundError: When the device does not answer adb.
         """
         self._serial = serial
+        self.default_timeout = default_timeout
 
         # ── Transport Layers ─────────────────────────────────────────
         self.adb = AdbClient(serial)
@@ -270,6 +281,23 @@ class Device:
 
     def get_window_dump(self) -> WindowDump:
         return WindowDump(self._u2.dump_hierarchy())
+
+    def get(self, by: By, value: str | re.Pattern[str], *, exact: bool = True) -> Locator:
+        """A lazy :class:`~geppetto.locator.Locator` for the widgets matching *by*/*value*.
+
+        Nothing is looked up until an action (``click()``, ``fill()``…) or a read
+        (``widget()``, ``all()``) runs; actions wait up to :attr:`default_timeout` for the
+        element to be visible and enabled. *value* may be a compiled regex; ``exact=False``
+        matches a case-insensitive substring. Chain ``.get()``, ``.filter()``, ``.below()``,
+        ``.within()``, ``.nth()``… to refine.
+
+        Raises:
+            ValueError: For ``By.WIDGET``.
+        """
+        from .locator import Locator
+        from .locator.query import Find, Match, Query
+
+        return Locator(self, Query((Find(Match(by, value, exact)),)))
 
     def await_widget(
         self,

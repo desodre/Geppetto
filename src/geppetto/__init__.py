@@ -18,10 +18,12 @@ from .exceptions import (
     DeviceNotFoundError,
     DeviceTimeoutError,
     EmulatorError,
+    ExpectationError,
     GeppettoError,
     LogNotFoundError,
     WidgetNotFoundError,
 )
+from .locator import Locator, LocatorAssertions, expect
 from .logcat import LogcatStream, LogLine
 from .models.by import By
 from .models.common_classes import CommonClasses
@@ -58,6 +60,10 @@ def __getattr__(name: str) -> Any:
 __all__ = [
     # Core
     "Device",
+    # Locators
+    "Locator",
+    "LocatorAssertions",
+    "expect",
     # UI
     "Bounds",
     "Children",
@@ -73,6 +79,7 @@ __all__ = [
     "AdbCommandError",
     "EmulatorError",
     "AppCrashedError",
+    "ExpectationError",
     "LogNotFoundError",
     # Logcat
     "LogcatStream",

@@ -27,6 +27,10 @@ parent issue per theme, sub-issues for the work, each with a **Done when**.
 src/geppetto/
   __init__.py        public API, __version__ (single source), lazy optional imports
   device.py          Device: the facade users touch. Composes everything below.
+  locator/           Device.get() → Locator: query.py (pure resolution of chained steps on the
+                     dump: match/filter/has/within/relative/nth), locator.py (auto-waiting actions
+                     through Device methods), assertions.py (expect() retrying until timeout,
+                     ExpectationError with the last observed state)
   recording.py       ScreenRecording: background screenrecord (start / stop(save_to) / discard)
   logcat.py          LogcatStream: `logcat -T <device time>` read in a thread (never `logcat -c`),
                      filters, ring buffer, expect()/expect_no(), settle()
@@ -66,6 +70,9 @@ analyzers, hardware: optional, imported lazily from geppetto/__init__.py
 - **`services/`** receive an `AdbClient`, never a `Device` (no cycles).
 - **`Device`** wires it together and owns the result folder (`<output>/<ts>_<serial>/`
   with `Images/Screenshots`, `Videos/Screenrecords`, `Logs`).
+- **`locator/`** depends on `Device` (imported only under `TYPE_CHECKING`; `Device.get()` imports
+  it lazily). `query.py` never does I/O: new selector relations go there with XML-only tests.
+  Actions call `Device.click/swipe/input_text`, never `adb` directly, except `fill()`'s key events.
 - **`pytest_plugin.py`** loads on every pytest run where the package is installed: keep its import
   cheap (`Device`/uiautomator2 are imported lazily) and never let an artifact failure change a test
   outcome. Its own tests use `pytester` with a fake `Device` from `geppetto_device_factory`; this
@@ -159,6 +166,10 @@ If the machine has no Python 3.12, `UV_PYTHON=3.14 uv sync --group dev` works lo
   match, so a shared value would record a tap on another element. `tests/test_inspector.py` checks
   that every recommended selector finds exactly its own node; keep that test passing.
 - **`input text`**: a raw space ends the text; spaces must be `%s` (done by `Device.input_text`).
+- **A package attribute shadows its module**: `geppetto.locator.expect` is the function, so the
+  assertions live in `locator/assertions.py` (monkeypatching `geppetto.locator.expect.time` fails).
+- **Hierarchy dumps mark `enabled`** on every node; the `DUMP` in `tests/conftest.py` omits it on
+  the inner TextView, so that node is "disabled" for locators. Add the attribute in new fixtures.
 - **uiautomator2 XPath** is `d.xpath(expr)`, not `d(xpath=...)`.
 - **lxml XPath** can return numbers/strings (`count(...)`): filter for `etree._Element`.
 - **Never interpolate user text into XPath**; pass XPath variables (`$text`) instead.

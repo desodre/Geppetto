@@ -32,8 +32,8 @@ class Selector:
     fragile: bool = False
 
     def code(self, device: str = "device") -> str:
-        """Python expression that finds the widget with Geppetto's API."""
-        return f"{device}.await_widget(By.{self.by.name}, {self.value!r})"
+        """Python expression: the :class:`~geppetto.Locator` for the widget."""
+        return f"{device}.get(By.{self.by.name}, {self.value!r})"
 
 
 def xpath_literal(value: str) -> str:

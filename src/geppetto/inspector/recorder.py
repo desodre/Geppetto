@@ -19,7 +19,7 @@ class Recorder:
 
     def click(self, selector: Selector) -> str:
         aviso = "  # fragile: position-based selector" if selector.fragile else ""
-        return self._add(f"device.click({selector.code()}){aviso}")
+        return self._add(f"{selector.code()}.click(){aviso}")
 
     def type_text(self, text: str) -> str:
         return self._add(f"device.input_text({text!r})")

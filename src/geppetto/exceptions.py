@@ -32,3 +32,8 @@ class LogNotFoundError(GeppettoError):
 
 class AppCrashedError(GeppettoError):
     """The app crashed (Java exception, ANR or native signal) while it was being watched."""
+
+
+class ExpectationError(GeppettoError, AssertionError):
+    """An ``expect()`` assertion did not hold before its timeout; the message has the last
+    observed state. Also an ``AssertionError``, so pytest reports it as a failed assertion."""

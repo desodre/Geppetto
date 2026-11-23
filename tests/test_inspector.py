@@ -122,15 +122,19 @@ def test_recorded_script_runs(monkeypatch):
 
     feito = []
 
+    class FakeLocator:
+        def __init__(self, by, value):
+            self.alvo = (by, value)
+
+        def click(self):
+            feito.append(("click", self.alvo))
+
     class FakeDevice:
         def __init__(self, serial):
             feito.append(("device", serial))
 
-        def await_widget(self, by, value):
-            return (by, value)
-
-        def click(self, alvo):
-            feito.append(("click", alvo))
+        def get(self, by, value):
+            return FakeLocator(by, value)
 
         def input_text(self, text):
             feito.append(("text", text))
@@ -197,7 +201,7 @@ def test_server_serves_page_screenshot_and_hierarchy(servidor):
         if n["attrs"].get("text") == "Login" and n["attrs"]["class"].endswith("Button")
     )
     assert login["bounds"] == [100, 400, 500, 500]
-    assert login["selector"]["code"] == "device.await_widget(By.ID, 'com.app:id/login')"
+    assert login["selector"]["code"] == "device.get(By.ID, 'com.app:id/login')"
 
 
 def test_server_records_actions(servidor, adb_run):
@@ -206,7 +210,7 @@ def test_server_records_actions(servidor, adb_run):
 
     assert _post(
         servidor, "/api/action", {"type": "click", "node": login["index"], "record": True}
-    )["code"] == ("device.click(device.await_widget(By.ID, 'com.app:id/login'))")
+    )["code"] == ("device.get(By.ID, 'com.app:id/login').click()")
     assert _post(servidor, "/api/action", {"type": "text", "text": "a b", "record": True})[
         "code"
     ] == ("device.input_text('a b')")
