@@ -11,6 +11,10 @@ Existing transport APIs may propagate subprocess errors; see each method's contr
 
 ::: geppetto.core.emulator
 
+::: geppetto.core.backend
+
+::: geppetto.core.carlo
+
 ::: geppetto.services.wifi
 
 ::: geppetto.services.lockscreen

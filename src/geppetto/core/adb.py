@@ -76,11 +76,18 @@ class AdbClient:
     def _shell_args(self, command: Command) -> list[str]:
         return ["adb", "-s", self.serial, "shell", device_command(command)]
 
-    def shell(self, command: Command) -> str:
-        """Run ``adb -s <serial> shell <command>`` and return its stdout."""
+    def shell(self, command: Command, *, timeout: float | None = None) -> str:
+        """Run ``adb -s <serial> shell <command>`` and return its stdout.
+
+        Raises:
+            subprocess.CalledProcessError: The command exited non-zero.
+            subprocess.TimeoutExpired: *timeout* seconds passed (no limit when ``None``).
+        """
         full = self._shell_args(command)
         try:
-            result = subprocess.run(full, capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                full, capture_output=True, text=True, check=True, timeout=timeout
+            )
             return result.stdout
         except subprocess.CalledProcessError as e:
             self.logger.error("ADB shell failed: %s\nStderr: %s", " ".join(full), e.stderr)
@@ -115,11 +122,18 @@ class AdbClient:
         full = ["adb", "-s", self.serial, "exec-out", device_command(command)]
         return subprocess.run(full, capture_output=True, check=True).stdout
 
-    def cmd(self, command: Command) -> str:
-        """Run ``adb -s <serial> <command>`` (host-side adb command, not ``shell``)."""
+    def cmd(self, command: Command, *, timeout: float | None = None) -> str:
+        """Run ``adb -s <serial> <command>`` (host-side adb command, not ``shell``).
+
+        Raises:
+            subprocess.CalledProcessError: The command exited non-zero.
+            subprocess.TimeoutExpired: *timeout* seconds passed (no limit when ``None``).
+        """
         args = shlex.split(command) if isinstance(command, str) else [str(a) for a in command]
         full = ["adb", "-s", self.serial, *args]
-        return subprocess.run(full, capture_output=True, text=True, check=True).stdout
+        return subprocess.run(
+            full, capture_output=True, text=True, check=True, timeout=timeout
+        ).stdout
 
     async def async_shell(self, command: Command) -> str:
         """Run ``adb shell`` asynchronously."""

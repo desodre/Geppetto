@@ -40,6 +40,16 @@ class TestWidget:
     def test_missing_bounds_is_none(self):
         assert Widget.from_dict({"text": "Ok"}).bounds is None
 
+    def test_inverted_bounds_is_none(self):
+        assert Widget.from_dict({"text": "Offscreen", "bounds": "[50,10][20,40]"}).bounds is None
+        xml = (
+            "<hierarchy>"
+            '<node text="Offscreen" bounds="[50,10][20,40]" />'
+            '<node text="Visible" bounds="[0,0][100,50]" />'
+            "</hierarchy>"
+        )
+        assert WindowDump(xml).find_widget(By.TEXT, "Visible").bounds == Bounds("[0,0][100,50]")
+
     def test_from_xml_node_keeps_the_node(self):
         node = etree.fromstring('<node text="A" bounds="[0,0][1,1]"/>')
         assert Widget.from_xml_node(node).node is node

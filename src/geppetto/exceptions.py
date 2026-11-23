@@ -37,3 +37,16 @@ class AppCrashedError(GeppettoError):
 class ExpectationError(GeppettoError, AssertionError):
     """An ``expect()`` assertion did not hold before its timeout; the message has the last
     observed state. Also an ``AssertionError``, so pytest reports it as a failed assertion."""
+
+
+class CarloError(GeppettoError):
+    """The Carlo agent could not be started, or broke or refused its protocol.
+
+    Attributes:
+        code: Stable machine-readable reason (a protocol code such as ``"bad_magic"`` or
+            ``"unavailable"``, or a host-side one such as ``"timeout"``), ``None`` if unknown.
+    """
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code

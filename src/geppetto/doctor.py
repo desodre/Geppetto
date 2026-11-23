@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from enum import Enum
+from pathlib import Path
 
-from .core import emulator, host
+from .core import carlo, emulator, host
 from .exceptions import GeppettoError
 
 #: Where uiautomator2 3.x keeps its agent on the device.
@@ -185,6 +187,32 @@ def check_emulator() -> Check:
     return Check("emulator", Status.OK, f"{len(avds)} AVD(s): {', '.join(avds)}")
 
 
+def check_carlo() -> Check:
+    """Whether a Carlo agent binary is configured (``$GEPPETTO_CARLO_BINARY``).
+
+    Returns:
+        ``OK`` with the path when it is a file, ``INFO`` when unset (only the ``carlo`` backend
+        needs it), ``WARN`` when it points to nothing. Never ``FAIL``.
+    """
+    configured = os.environ.get(carlo.BINARY_ENV)
+    if not configured:
+        return Check(
+            "carlo",
+            Status.INFO,
+            "not configured",
+            f"Only needed for backend='carlo'; set {carlo.BINARY_ENV} to the agent binary.",
+        )
+    path = Path(configured)
+    if path.is_file():
+        return Check("carlo", Status.OK, str(path))
+    return Check(
+        "carlo",
+        Status.WARN,
+        f"{carlo.BINARY_ENV} points to a missing file: {path}",
+        "Build the Carlo agent for the device's ABI and point the variable at it.",
+    )
+
+
 #: extra → modules it needs
 EXTRAS = {
     "analyzers": ("PIL", "cv2", "imagehash", "extcolors", "numpy"),
@@ -220,5 +248,5 @@ def run_checks(serial: str | None = None) -> list[Check]:
                 host.DeviceEntry(serial, "not found")
             ]
         checks += check_devices(entries)
-    checks += [check_fastboot(), check_emulator(), *check_extras()]
+    checks += [check_fastboot(), check_emulator(), check_carlo(), *check_extras()]
     return checks

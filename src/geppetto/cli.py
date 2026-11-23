@@ -9,6 +9,7 @@
     geppetto pair HOST:PORT [CODE] | pair --qr
     geppetto connect HOST:PORT | disconnect HOST:PORT
     geppetto inspect [-s SERIAL] [--port 8765] [--host 127.0.0.1] [--no-browser]
+                     [--backend {uiautomator2,carlo}] [--carlo-binary PATH]
 
 Commands that need one device take ``-s/--serial``, then ``GEPPETTO_SERIAL``, then the only ready
 device. Exit codes: 0 ok, 1 failure (message on stderr), 2 usage error, 130 interrupted.
@@ -31,6 +32,7 @@ from pathlib import Path
 from . import __version__, doctor
 from .core import emulator, host
 from .core.adb import AdbClient
+from .core.backend import BACKEND_NAMES
 from .exceptions import GeppettoError
 from .recording import MAX_SECONDS, ScreenRecording
 
@@ -234,9 +236,29 @@ def cmd_disconnect(args: argparse.Namespace) -> int:
 
 
 def cmd_inspect(args: argparse.Namespace) -> int:
-    from .device import Device  # uiautomator2: only for this command
+    """Serve the inspector for one device until Ctrl+C, then print the recorded script.
+
+    The UI backend is ``--backend``, then ``GEPPETTO_BACKEND``, then ``uiautomator2``; the Carlo
+    binary is ``--carlo-binary``, then ``GEPPETTO_CARLO_BINARY``. The device (and a Carlo
+    session) is always closed on exit.
+
+    Returns:
+        0 when the server stopped, 2 when ``GEPPETTO_BACKEND`` names an unknown backend.
+
+    Raises:
+        GeppettoError: No device, or the backend could not start (e.g. ``CarloError``).
+    """
+    from .device import Device  # the UI backend is imported only for this command
     from .inspector import InspectorServer
 
+    backend = args.backend or os.environ.get("GEPPETTO_BACKEND") or "uiautomator2"
+    if backend not in BACKEND_NAMES:
+        print(
+            f"geppetto: error: GEPPETTO_BACKEND must be one of: {', '.join(BACKEND_NAMES)}",
+            file=sys.stderr,
+        )
+        return 2
+    carlo_binary = args.carlo_binary or os.environ.get("GEPPETTO_CARLO_BINARY")
     serial = pick_serial(args.serial)
     if args.host not in ("127.0.0.1", "localhost", "::1"):
         print(
@@ -244,20 +266,32 @@ def cmd_inspect(args: argparse.Namespace) -> int:
             "and type on the device.",
             file=sys.stderr,
         )
-    _out(f"Connecting to {serial} (installs the uiautomator2 agent on first use)…")
-    device = Device(serial, output_dir=args.output, log_to_console=False)
-    server = InspectorServer(device, host=args.host, port=args.port)
-    _out(f"Geppetto Inspector on {server.url}  (Ctrl+C to stop)")
-    if not args.no_browser:
-        import webbrowser
-
-        webbrowser.open(server.url)
+    if backend == "carlo":
+        _out(f"Connecting to {serial} (starts a Carlo session, removed on exit)…")
+    else:
+        _out(f"Connecting to {serial} (installs the uiautomator2 agent on first use)…")
+    device = Device(
+        serial,
+        output_dir=args.output,
+        log_to_console=False,
+        backend=backend,
+        carlo_binary=carlo_binary,
+    )
     try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
+        server = InspectorServer(device, host=args.host, port=args.port)
+        _out(f"Geppetto Inspector on {server.url}  (Ctrl+C to stop)")
+        if not args.no_browser:
+            import webbrowser
+
+            webbrowser.open(server.url)
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.shutdown()
     finally:
-        server.shutdown()
+        device.close()
     if server.recorder.steps:
         _out("\nRecorded script:\n")
         _out(server.recorder.script())
@@ -332,6 +366,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--host", default="127.0.0.1", help="interface to listen on (default: local)")
     p.add_argument("--no-browser", action="store_true", help="do not open the browser")
     p.add_argument("-o", "--output", default="./results", help="Device result folder")
+    p.add_argument(
+        "--backend",
+        choices=BACKEND_NAMES,
+        help="UI backend (default: GEPPETTO_BACKEND or uiautomator2)",
+    )
+    p.add_argument(
+        "--carlo-binary", help="local Carlo binary for --backend carlo (GEPPETTO_CARLO_BINARY)"
+    )
     p.set_defaults(func=cmd_inspect)
 
     p = sub.add_parser("connect", help="adb connect HOST:PORT")

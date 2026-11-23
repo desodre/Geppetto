@@ -7,7 +7,14 @@ import pytest
 from lxml import etree
 
 from geppetto import By, WindowDump
-from geppetto.inspector import InspectorServer, Recorder, Selector, recommend, xpath_literal
+from geppetto.inspector import (
+    InspectorServer,
+    Recorder,
+    Selector,
+    hierarchy_json,
+    recommend,
+    xpath_literal,
+)
 
 # A list where every row shares the resource-id, duplicated texts, quotes and a node with nothing.
 LISTA = """<hierarchy>
@@ -241,3 +248,17 @@ def test_cli_inspect_parser():
 
     args = build_parser().parse_args(["inspect", "-s", "S", "--port", "0", "--no-browser"])
     assert (args.serial, args.port, args.no_browser, args.host) == ("S", 0, True, "127.0.0.1")
+
+
+def test_hierarchy_json_invalid_bounds_are_none():
+    # Carlo reports off-screen nodes with inverted bounds; they must not break /api/hierarchy.
+    xml = (
+        '<hierarchy><node class="a.Root" bounds="[0,0][100,100]">'
+        '<node class="a.Off" text="Hidden" bounds="[0,2400][1080,2200]"/>'
+        '<node class="a.Bad" text="Junk" bounds="nonsense"/>'
+        "</node></hierarchy>"
+    )
+    nodes, elementos = hierarchy_json(xml)
+    assert [n["bounds"] for n in nodes] == [[0, 0, 100, 100], None, None]
+    assert len(elementos) == 3
+    assert nodes[1]["attrs"]["text"] == "Hidden" and nodes[1]["selector"]["code"]

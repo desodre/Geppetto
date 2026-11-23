@@ -20,5 +20,6 @@ labs, boot state and OS features.
 - [Locators, auto-waiting actions and `expect()` assertions](guides/locators.md)
 - [Screen inspection and recording Python code](guides/inspector.md)
 - [Live logcat and watched crashes](guides/logcat-and-crashes.md)
+- [Opt-in Carlo UI backend](guides/carlo.md)
 - [Two-device tests](recipes/two-devices.md)
 - [Versioning and support commitments](policies/versioning.md)

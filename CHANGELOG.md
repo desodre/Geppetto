@@ -34,12 +34,30 @@
   native signals with stack/backtrace/tombstone; `AppCrashedError`. pytest: `--geppetto-watch`,
   ini `geppetto_watch`, marker `geppetto_watch(...)` fail a test when a watched app crashes and add
   `crash.txt` to the artifacts.
+- **Opt-in Carlo UI backend**: `Device(serial, backend="carlo", carlo_binary=...)` (or
+  `GEPPETTO_CARLO_BINARY`) reads the hierarchy and screen size from a Carlo agent session instead
+  of uiautomator2, which stays the default. `geppetto.core.carlo` (protocol v1 framing,
+  `CarloControlClient`, `CarloSession`) and `geppetto.core.backend` (`UiBackend`,
+  `create_backend`); errors are `CarloError` with a stable `code`. Host-tested only; Carlo's
+  pinned profile is API 36, API 34 is pending.
+- Carlo sessions restart once when a hierarchy dump finds Carlo gone (`closed`/`io`, e.g. after
+  its 30 s idle exit); `auto_reconnect=False` on `CarloSession`/`CarloBackend` disables it.
+  `CarloSession.dump_hierarchy()` and `parse_surface_orientation()` are new.
+- The Carlo backend's screen size follows the display rotation (swapped at 90°/270°).
+- `Device.close()` and `with Device(...)`: release the UI backend (ends a Carlo session). The
+  pytest plugin closes every device at session end; a failing close is logged, never raised.
+- pytest: `--geppetto-backend` (env `GEPPETTO_BACKEND`) and `--geppetto-carlo-binary`.
+- `geppetto doctor` reports whether a Carlo binary is configured.
+- `geppetto inspect --backend {uiautomator2,carlo} --carlo-binary PATH` (env `GEPPETTO_BACKEND`,
+  `GEPPETTO_CARLO_BINARY`); the device and its Carlo session are closed when the inspector stops.
 
 ### Fixed
 - Pytest logcat artifacts fall back to second-resolution device time on older Android builds
   without fractional `date` formats, including API 26.
 - Inspector: clickable rows without attributes of their own (the usual Android list item) get a
   stable selector through their label instead of a fragile position.
+- Inspector: nodes with invalid or inverted bounds (Carlo's off-screen nodes) get `bounds: null`
+  instead of failing `/api/hierarchy`.
 
 ### Changed
 - API 34 emulator integration now runs for every PR to main and is reused by dev. Release

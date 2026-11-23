@@ -48,9 +48,16 @@ class Widget:
     def from_dict(cls, data: Mapping[str, str]) -> Widget:
         """Build from the attributes of a hierarchy ``<node>`` (``resource-id``, ``bounds``…).
 
-        A missing or empty ``bounds`` gives ``bounds=None`` instead of an error.
+        A missing, empty or inverted ``bounds`` (e.g. an off-screen accessibility node where
+        ``x1 > x2`` or ``y1 > y2``) gives ``bounds=None`` instead of an error.
         """
-        bounds = data.get("bounds") or None
+        raw_bounds = data.get("bounds") or None
+        parsed_bounds: Bounds | None = None
+        if raw_bounds:
+            try:
+                parsed_bounds = Bounds(raw_bounds)
+            except ValueError:
+                parsed_bounds = None
         return cls(
             index=data.get("index", ""),
             text=data.get("text", ""),
@@ -68,7 +75,7 @@ class Widget:
             long_clickable=_flag(data, "long-clickable"),
             is_password=_flag(data, "password"),
             selected=_flag(data, "selected"),
-            bounds=Bounds(bounds) if bounds else None,
+            bounds=parsed_bounds,
             drawing_order=data.get("drawing-order", ""),
         )
 
