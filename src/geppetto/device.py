@@ -283,15 +283,24 @@ class Device:
         return WindowDump(self._u2.dump_hierarchy())
 
     def get(self, by: By, value: str | re.Pattern[str], *, exact: bool = True) -> Locator:
-        """A lazy :class:`~geppetto.locator.Locator` for the widgets matching *by*/*value*.
+        """Build a lazy locator for the widgets matching *by*/*value*.
 
         Nothing is looked up until an action (``click()``, ``fill()``…) or a read
         (``widget()``, ``all()``) runs; actions wait up to :attr:`default_timeout` for the
-        element to be visible and enabled. *value* may be a compiled regex; ``exact=False``
-        matches a case-insensitive substring. Chain ``.get()``, ``.filter()``, ``.below()``,
+        element to be visible and enabled. Chain ``.get()``, ``.filter()``, ``.below()``,
         ``.within()``, ``.nth()``… to refine.
 
+        Args:
+            by: Search strategy.
+            value: Expected value, or a compiled regex (not with ``By.XPATH``).
+            exact: Whole-value match; ``False`` matches a case-insensitive substring.
+
+        Returns:
+            A :class:`~geppetto.locator.Locator` bound to this device.
+
         Raises:
+            TypeError: For a regex with ``By.XPATH``, or a *value* that is neither a ``str``
+                nor a compiled regex.
             ValueError: For ``By.WIDGET``.
         """
         from .locator import Locator

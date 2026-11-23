@@ -23,8 +23,9 @@ if TYPE_CHECKING:
 
 #: Seconds between two hierarchy dumps while waiting.
 POLL_INTERVAL = 0.25
-#: ``KEYCODE_MOVE_END`` and ``KEYCODE_DEL``, used by :meth:`Locator.fill`.
-_MOVE_END, _DEL = 123, 67
+#: ``KEYCODE_MOVE_END``, ``KEYCODE_DEL`` and ``KEYCODE_FORWARD_DEL``, used by
+#: :meth:`Locator.fill`.
+_MOVE_END, _DEL, _FORWARD_DEL = 123, 67, 112
 
 
 def is_visible(widget: Widget) -> bool:
@@ -65,7 +66,20 @@ class Locator:
     # ── Refinement (no I/O) ─────────────────────────────────────────
 
     def get(self, by: By, value: Value, *, exact: bool = True) -> Locator:
-        """Descendants of this locator's matches that satisfy *by*/*value*."""
+        """Search the descendants of this locator's matches.
+
+        Args:
+            by: Search strategy.
+            value: Expected value, or a compiled regex (not with ``By.XPATH``).
+            exact: Whole-value match; ``False`` matches a case-insensitive substring.
+
+        Returns:
+            A new locator for the descendants that satisfy *by*/*value*.
+
+        Raises:
+            TypeError: For a regex with ``By.XPATH`` or a value that is not a str/regex.
+            ValueError: For ``By.WIDGET``.
+        """
         return self._then(Find(Match(by, value, exact)))
 
     def filter(
@@ -76,8 +90,20 @@ class Locator:
         exact: bool = True,
         has: Locator | None = None,
     ) -> Locator:
-        """Narrow the matches: the same node must also satisfy *by*/*value*, and/or contain a
-        descendant matched by *has*."""
+        """Narrow the matches without descending.
+
+        Args:
+            by: Strategy the same node must also satisfy (together with *value*).
+            value: Expected value or compiled regex for *by*.
+            exact: Whole-value match; ``False`` matches a case-insensitive substring.
+            has: Keep only the matches that contain a descendant matched by this locator.
+
+        Returns:
+            A new locator with the extra conditions.
+
+        Raises:
+            TypeError: When only one of *by*/*value* is given, or neither they nor *has* are.
+        """
         if (by is None) != (value is None):
             raise TypeError("filter() needs both `by` and `value`, or neither")
         if by is None and has is None:
@@ -90,35 +116,61 @@ class Locator:
         return result
 
     def within(self, other: Locator) -> Locator:
-        """Only matches inside the first match of *other*."""
+        """Keep only the matches inside the first match of *other*.
+
+        Returns:
+            A new, narrowed locator.
+        """
         return self._then(Within(other._query))
 
     def below(self, other: Locator) -> Locator:
-        """Matches under *other* on screen, closest first."""
+        """Keep the matches under *other* on screen, closest first.
+
+        Returns:
+            A new, narrowed locator.
+        """
         return self._then(Relative(Side.BELOW, other._query))
 
     def above(self, other: Locator) -> Locator:
-        """Matches over *other* on screen, closest first."""
+        """Keep the matches over *other* on screen, closest first.
+
+        Returns:
+            A new, narrowed locator.
+        """
         return self._then(Relative(Side.ABOVE, other._query))
 
     def right_of(self, other: Locator) -> Locator:
-        """Matches to the right of *other* on screen, closest first."""
+        """Keep the matches to the right of *other* on screen, closest first.
+
+        Returns:
+            A new, narrowed locator.
+        """
         return self._then(Relative(Side.RIGHT_OF, other._query))
 
     def left_of(self, other: Locator) -> Locator:
-        """Matches to the left of *other* on screen, closest first."""
+        """Keep the matches to the left of *other* on screen, closest first.
+
+        Returns:
+            A new, narrowed locator.
+        """
         return self._then(Relative(Side.LEFT_OF, other._query))
 
     def nth(self, index: int) -> Locator:
-        """The match at *index* (``-1`` is the last)."""
+        """Keep only the match at *index* (``-1`` is the last).
+
+        Returns:
+            A new locator with at most one match.
+        """
         return self._then(Nth(index))
 
     @property
     def first(self) -> Locator:
+        """A new locator for the first match (same as ``nth(0)``)."""
         return self.nth(0)
 
     @property
     def last(self) -> Locator:
+        """A new locator for the last match (same as ``nth(-1)``)."""
         return self.nth(-1)
 
     def _then(self, step: Find | Filter | Has | Within | Relative | Nth) -> Locator:
@@ -126,12 +178,17 @@ class Locator:
 
     @property
     def query(self) -> Query:
+        """The immutable :class:`~geppetto.locator.query.Query` behind this locator."""
         return self._query
 
     # ── Resolution ───────────────────────────────────────────────────
 
     def all(self) -> list[Widget]:
-        """Every match in the current hierarchy, right now (no waiting)."""
+        """Resolve the locator against the current hierarchy, without waiting.
+
+        Returns:
+            Every matching widget, possibly none.
+        """
         return self._resolve()[1]
 
     def _resolve(self) -> tuple[WindowDump, list[Widget]]:
@@ -139,24 +196,48 @@ class Locator:
         return dump, [Widget.from_xml_node(node) for node in self._query.resolve(dump.root)]
 
     def count(self) -> int:
-        """How many widgets match right now."""
+        """Count the matches right now, without waiting.
+
+        Returns:
+            The number of matching widgets.
+        """
         return len(self.all())
 
     def is_visible(self) -> bool:
-        """Whether the first match exists and has a box on screen (no waiting)."""
+        """Check visibility right now, without waiting.
+
+        Returns:
+            Whether the first match exists and has a box on screen.
+        """
         widgets = self.all()
         return bool(widgets) and is_visible(widgets[0])
 
     def is_enabled(self) -> bool:
+        """Check the enabled state right now, without waiting.
+
+        Returns:
+            Whether the first match exists and is enabled.
+        """
         widgets = self.all()
         return bool(widgets) and widgets[0].enabled
 
     def is_checked(self) -> bool:
+        """Check the checked state right now, without waiting.
+
+        Returns:
+            Whether the first match exists and is checked.
+        """
         widgets = self.all()
         return bool(widgets) and widgets[0].checked
 
     def widget(self, timeout: float | None = None) -> Widget:
-        """Wait for the first match and return it, with its children filled in.
+        """Wait for the first match.
+
+        Args:
+            timeout: Seconds to wait; defaults to ``Device.default_timeout``.
+
+        Returns:
+            The first matching widget, with its children filled in.
 
         Raises:
             DeviceTimeoutError: When nothing matches within *timeout* seconds.
@@ -167,12 +248,22 @@ class Locator:
 
     @property
     def text(self) -> str:
-        """The ``text`` of the first match (waits for it)."""
+        """The ``text`` of the first match, waiting for it like :meth:`widget`.
+
+        Raises:
+            DeviceTimeoutError: When nothing matches within ``Device.default_timeout``.
+        """
         return self.widget().text
 
     def wait_for(self, state: str = "visible", timeout: float | None = None) -> Widget | None:
-        """Wait until the locator is ``"visible"``, ``"hidden"``, ``"enabled"`` or
-        ``"attached"`` (present). Returns the widget, or ``None`` for ``"hidden"``.
+        """Wait until the locator reaches *state*.
+
+        Args:
+            state: ``"visible"``, ``"hidden"``, ``"enabled"`` or ``"attached"`` (present).
+            timeout: Seconds to wait; defaults to ``Device.default_timeout``.
+
+        Returns:
+            The first match, or ``None`` for ``"hidden"``.
 
         Raises:
             DeviceTimeoutError: When the state is not reached in time.
@@ -192,31 +283,64 @@ class Locator:
     # ── Actions (auto-waiting) ───────────────────────────────────────
 
     def click(self, timeout: float | None = None) -> None:
-        """Tap the center of the element once it is visible and enabled."""
+        """Tap the center of the element once it is visible and enabled.
+
+        Args:
+            timeout: Seconds to wait; defaults to ``Device.default_timeout``.
+
+        Raises:
+            DeviceTimeoutError: When the element is not visible and enabled in time.
+        """
         self._device.click(self._actionable(timeout))
 
     def long_press(self, duration: float = 1.0, timeout: float | None = None) -> None:
-        """Press the center of the element for *duration* seconds."""
+        """Press the center of the element once it is visible and enabled.
+
+        Args:
+            duration: Seconds to hold the press.
+            timeout: Seconds to wait; defaults to ``Device.default_timeout``.
+
+        Raises:
+            DeviceTimeoutError: When the element is not visible and enabled in time.
+        """
         widget = self._actionable(timeout)
         assert widget.bounds is not None
         center = widget.bounds.center
         self._device.swipe(center, center, duration * 1000)
 
     def type_text(self, text: str, *, log_text: bool = True, timeout: float | None = None) -> None:
-        """Tap the element, then type *text* after what is already there."""
+        """Tap the element, then type *text* after what is already there.
+
+        Args:
+            text: Text to type.
+            log_text: ``False`` keeps *text* out of the logs (passwords).
+            timeout: Seconds to wait; defaults to ``Device.default_timeout``.
+
+        Raises:
+            DeviceTimeoutError: When the element is not visible and enabled in time.
+        """
         self.click(timeout)
         self._device.input_text(text, log_text=log_text)
 
     def fill(self, text: str, *, log_text: bool = True, timeout: float | None = None) -> None:
         """Tap the field, delete its current text and type *text*.
 
-        Pass ``log_text=False`` for passwords: the text stays out of the logs.
+        Args:
+            text: Text that replaces the field's content.
+            log_text: ``False`` keeps *text* out of the logs (passwords).
+            timeout: Seconds to wait; defaults to ``Device.default_timeout``.
+
+        Raises:
+            DeviceTimeoutError: When the field is not visible and enabled in time.
         """
         widget = self._actionable(timeout)
         self._device.click(widget)
         if widget.text:
             self._device.key_event(_MOVE_END)
-            self._device.adb.shell(["input", "keyevent", *([str(_DEL)] * len(widget.text))])
+            # MOVE_END only reaches the end of the current line in multi-line or wrapped
+            # fields: forward deletes clear what is left after the cursor.
+            keys = [str(_DEL)] * len(widget.text) + [str(_FORWARD_DEL)] * len(widget.text)
+            self._device.adb.shell(["input", "keyevent", *keys])
         self._device.input_text(text, log_text=log_text)
 
     def swipe_to(
@@ -225,7 +349,16 @@ class Locator:
         duration: float = 1.0,
         timeout: float | None = None,
     ) -> None:
-        """Swipe from the center of this element to *target* (another locator or ``(x, y)``)."""
+        """Swipe from the center of this element to *target*.
+
+        Args:
+            target: Another locator (its center) or an ``(x, y)`` point.
+            duration: Seconds the swipe lasts.
+            timeout: Seconds to wait for each element; defaults to ``Device.default_timeout``.
+
+        Raises:
+            DeviceTimeoutError: When an element is not visible and enabled in time.
+        """
         source = self._actionable(timeout)
         assert source.bounds is not None
         if isinstance(target, Locator):

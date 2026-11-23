@@ -198,6 +198,20 @@ def test_filter_argument_validation(screen):
         screen.get(By.TEXT, "x").filter()
 
 
+def test_chained_xpath_cannot_escape_its_base(screen):
+    rows = screen.get(By.ID, "com.app:id/row")
+    # `(//...)[1]` does not start with `//`, so it is evaluated from the document root.
+    assert rows.get(By.XPATH, "(//node[@text='Settings'])[1]").count() == 0
+    assert [w.text for w in rows.get(By.XPATH, "(//node[@text='Wi-Fi'])[1]").all()] == ["Wi-Fi"]
+
+
+def test_filter_has_xpath_cannot_escape_its_candidate(screen):
+    rows = screen.get(By.ID, "com.app:id/row")
+    bluetooth = rows.filter(has=screen.get(By.XPATH, "(//node[@text='Bluetooth'])[1]"))
+    assert bluetooth.count() == 1
+    assert bluetooth.get(By.ID, "com.app:id/label").text == "Bluetooth"
+
+
 def test_widget_has_children_from_the_same_dump(screen):
     row = screen.get(By.ID, "com.app:id/row").first.widget()
     assert row.children is not None and [c.text for c in row.children] == ["Wi-Fi", ""]
@@ -244,7 +258,7 @@ def test_fill_clears_the_current_text_first(screen, adb_run):
     assert adb_run.shell_lines()[-4:] == [
         "input tap 540.0 640.0",
         "input keyevent 123",
-        "input keyevent " + " ".join(["67"] * len("old value")),
+        "input keyevent " + " ".join(["67"] * len("old value") + ["112"] * len("old value")),
         "input text new%stext",
     ]
 
@@ -316,6 +330,19 @@ def test_expect_not(screen):
     expect(screen.get(By.ID, "com.app:id/title")).not_.to_have_text("Other")
     with pytest.raises(ExpectationError, match="not to be visible"):
         expect(screen.get(By.TEXT, "Wi-Fi"), timeout=0).not_.to_be_visible()
+
+
+def test_negated_state_assertions_need_a_match(screen):
+    missing = expect(screen.get(By.TEXT, "Nope"), timeout=0).not_
+    with pytest.raises(ExpectationError, match="not to be enabled.*last seen: 0 matches"):
+        missing.to_be_enabled()
+    with pytest.raises(ExpectationError, match="not to be disabled.*last seen: 0 matches"):
+        missing.to_be_disabled()
+    with pytest.raises(ExpectationError, match="last seen: 0 matches"):
+        missing.to_have_text("Other")
+    # "No element" is still a valid state for visibility and count.
+    missing.to_be_visible()
+    missing.to_have_count(1)
 
 
 def test_expect_retries_until_it_holds(screen, monkeypatch):

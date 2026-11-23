@@ -216,7 +216,10 @@ def _find(root: Node, bases: list[Node] | None, match: Match) -> list[Node]:
             expression = match.value
             if expression.startswith("//"):
                 expression = "." + expression  # relative to the candidate, not the document
-            nodes: Iterable[Node] = _xpath_nodes(base, expression)
+            # `(//node)[1]` or `/hierarchy//node` stay absolute: keep only real descendants.
+            nodes: Iterable[Node] = [
+                n for n in _xpath_nodes(base, expression) if base in n.iterancestors()
+            ]
         else:
             nodes = (n for n in base.iterdescendants("node") if match.test(n))
         found.extend(nodes)
